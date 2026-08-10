@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +39,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/me", h.withAuth(h.me))
 	mux.HandleFunc("/api/v1/analytics", h.withAuth(h.analytics))
 	mux.HandleFunc("/api/v1/tenants", h.withAuth(h.tenants))
+	mux.HandleFunc("/api/v1/domains", h.withAuth(h.domains))
+	mux.HandleFunc("/api/v1/domains/", h.withAuth(h.domainByID))
 	mux.HandleFunc("/api/v1/customers", h.withAuth(h.customers))
 	mux.HandleFunc("/api/v1/links", h.withAuth(h.links))
 	mux.HandleFunc("/api/v1/links/", h.withAuth(h.linkByID))
@@ -251,7 +255,7 @@ func (h *Handler) links(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for i := range xs {
-			xs[i].ShortURL = h.C.BaseURL + "/r/" + xs[i].Slug
+			xs[i].ShortURL = h.shortURL(xs[i])
 		}
 		jsonOut(w, 200, xs)
 	case "POST":
@@ -266,7 +270,7 @@ func (h *Handler) links(w http.ResponseWriter, r *http.Request) {
 			errOut(w, 400, err.Error())
 			return
 		}
-		l.ShortURL = h.C.BaseURL + "/r/" + l.Slug
+		l.ShortURL = h.shortURL(l)
 		jsonOut(w, 201, l)
 	default:
 		w.WriteHeader(405)
@@ -346,6 +350,17 @@ func (h *Handler) redirect(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	host := strings.Trim(strings.ToLower(r.Host), ".")
+	if strings.Contains(host, ":") {
+		host = strings.Split(host, ":")[0]
+	}
+	if host != "" && host != h.baseHost() {
+		d, err := h.S.TenantDomainByDomain(host)
+		if err != nil || d.Status != "active" || l.TenantID == nil || d.TenantID != *l.TenantID {
+			http.NotFound(w, r)
+			return
+		}
+	}
 	h.S.TrackClick(l.ID, r.RemoteAddr, r.UserAgent(), r.Referer())
 	http.Redirect(w, r, l.TargetURL, 302)
 }
@@ -402,3 +417,101 @@ func logReq(next http.Handler) http.Handler {
 }
 
 var _ = models.User{}
+
+func (h *Handler) domains(w http.ResponseWriter, r *http.Request) {
+	u, _ := userFrom(r.Context())
+	switch r.Method {
+	case "GET":
+		xs, err := h.S.ListTenantDomains(u)
+		if err != nil {
+			errOut(w, 500, err.Error())
+			return
+		}
+		jsonOut(w, 200, xs)
+	case "POST":
+		var in struct {
+			TenantID int64  `json:"tenant_id"`
+			Domain   string `json:"domain"`
+		}
+		if !decode(w, r, &in) {
+			return
+		}
+		if u.Role == "tenant" && u.TenantID != nil {
+			in.TenantID = *u.TenantID
+		}
+		tok, _ := auth.NewToken(18)
+		d, err := h.S.CreateTenantDomain(u, in.TenantID, in.Domain, tok)
+		if err != nil {
+			errOut(w, 400, err.Error())
+			return
+		}
+		jsonOut(w, 201, d)
+	default:
+		w.WriteHeader(405)
+	}
+}
+
+func (h *Handler) domainByID(w http.ResponseWriter, r *http.Request) {
+	u, _ := userFrom(r.Context())
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/domains/")
+	verify := strings.HasSuffix(path, "/verify")
+	path = strings.TrimSuffix(path, "/verify")
+	id, _ := strconv.ParseInt(strings.Trim(path, "/"), 10, 64)
+	if verify && r.Method == "POST" {
+		d, err := h.S.TenantDomainByID(u, id)
+		if err != nil {
+			errOut(w, 404, "domain not found")
+			return
+		}
+		if !h.verifyDomain(d) {
+			errOut(w, 400, "DNS not verified yet")
+			return
+		}
+		_ = h.S.ActivateTenantDomain(id)
+		jsonOut(w, 200, map[string]string{"message": "domain verified"})
+		return
+	}
+	if r.Method == "DELETE" {
+		_ = h.S.DeleteTenantDomain(u, id)
+		w.WriteHeader(204)
+		return
+	}
+	w.WriteHeader(405)
+}
+
+func (h *Handler) verifyDomain(d models.TenantDomain) bool {
+	baseHost := h.baseHost()
+	if baseHost == "" {
+		return false
+	}
+	if cname, err := net.LookupCNAME(d.Domain); err == nil && strings.Trim(strings.ToLower(cname), ".") == baseHost {
+		return true
+	}
+	txts, _ := net.LookupTXT("_shortq." + d.Domain)
+	want := "shortq-verify=" + d.VerificationToken
+	for _, t := range txts {
+		if t == want {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handler) shortURL(l models.Link) string {
+	if domain, err := h.S.ActiveDomainForTenant(l.TenantID); err == nil && domain != "" {
+		return "https://" + domain + "/r/" + l.Slug
+	}
+	return strings.TrimRight(h.C.BaseURL, "/") + "/r/" + l.Slug
+}
+
+func (h *Handler) baseHost() string {
+	u, err := url.Parse(h.C.BaseURL)
+	if err != nil {
+		return ""
+	}
+	host := u.Hostname()
+	if host == "" {
+		host = strings.TrimPrefix(strings.TrimPrefix(h.C.BaseURL, "https://"), "http://")
+	}
+	return strings.Trim(strings.ToLower(host), ".")
+}

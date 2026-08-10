@@ -9,6 +9,16 @@ type Tenant struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type TenantDomain struct {
+	ID                int64      `json:"id"`
+	TenantID          int64      `json:"tenant_id"`
+	Domain            string     `json:"domain"`
+	Status            string     `json:"status"`
+	VerificationToken string     `json:"verification_token"`
+	CreatedAt         time.Time  `json:"created_at"`
+	VerifiedAt        *time.Time `json:"verified_at"`
+}
+
 type User struct {
 	ID        int64     `json:"id"`
 	TenantID  *int64    `json:"tenant_id"`

@@ -63,6 +63,23 @@
             <div id="tenants" class="list"></div>
           </section>
 
+
+          <section id="domainPanel" class="module" hidden>
+            <div class="module-head">
+              <h3>Custom Domains</h3>
+              <span>Tenant DNS</span>
+            </div>
+            <form class="form-grid" onsubmit="createDomain(event)">
+              <input name="domain" placeholder="go.customer.com" required>
+              <select id="domainTenant" name="tenant_id" required>
+                <option value="">select tenant</option>
+              </select>
+              <button>Add domain</button>
+            </form>
+            <div class="tiny">Point DNS with CNAME to this ShortQ host, then click Verify. TXT fallback also shown per domain.</div>
+            <div id="domains" class="list"></div>
+          </section>
+
           <section id="customerPanel" class="module" hidden>
             <div class="module-head">
               <h3>Tenant / Customer Users</h3>

@@ -297,3 +297,108 @@ func (s *Store) EnsureSuperadmin(email string, pass []byte) error {
 	}
 	return s.CreateUser(email, "Super Admin", "superadmin", nil, pass)
 }
+
+var domainRe = regexp.MustCompile(`^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+
+func cleanDomain(domain string) string {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	domain = strings.TrimPrefix(domain, "http://")
+	domain = strings.TrimPrefix(domain, "https://")
+	return strings.Trim(strings.Split(domain, "/")[0], ".")
+}
+
+func (s *Store) CreateTenantDomain(u models.User, tenantID int64, domain string, token string) (models.TenantDomain, error) {
+	domain = cleanDomain(domain)
+	if !domainRe.MatchString(domain) {
+		return models.TenantDomain{}, errors.New("domain invalid")
+	}
+	if u.Role == "tenant" {
+		if u.TenantID == nil || *u.TenantID != tenantID {
+			return models.TenantDomain{}, errors.New("tenant scope invalid")
+		}
+	} else if u.Role != "superadmin" {
+		return models.TenantDomain{}, errors.New("tenant or superadmin only")
+	}
+	_, err := s.DB.Exec(`INSERT INTO tenant_domains(tenant_id,domain,verification_token) VALUES(?,?,?)`, tenantID, domain, token)
+	if err != nil {
+		return models.TenantDomain{}, err
+	}
+	return s.TenantDomainByDomain(domain)
+}
+
+func (s *Store) ListTenantDomains(u models.User) ([]models.TenantDomain, error) {
+	q := `SELECT id,tenant_id,domain,status,verification_token,created_at,verified_at FROM tenant_domains`
+	args := []any{}
+	if u.Role == "tenant" {
+		q += ` WHERE tenant_id=?`
+		args = append(args, *u.TenantID)
+	} else if u.Role != "superadmin" {
+		return []models.TenantDomain{}, nil
+	}
+	q += ` ORDER BY id DESC`
+	rows, err := s.DB.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.TenantDomain
+	for rows.Next() {
+		d, err := scanTenantDomain(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) TenantDomainByDomain(domain string) (models.TenantDomain, error) {
+	row := s.DB.QueryRow(`SELECT id,tenant_id,domain,status,verification_token,created_at,verified_at FROM tenant_domains WHERE domain=?`, cleanDomain(domain))
+	return scanTenantDomain(row)
+}
+
+func (s *Store) TenantDomainByID(u models.User, id int64) (models.TenantDomain, error) {
+	q := `SELECT id,tenant_id,domain,status,verification_token,created_at,verified_at FROM tenant_domains WHERE id=?`
+	args := []any{id}
+	if u.Role == "tenant" {
+		q += ` AND tenant_id=?`
+		args = append(args, *u.TenantID)
+	}
+	row := s.DB.QueryRow(q, args...)
+	return scanTenantDomain(row)
+}
+
+func (s *Store) ActivateTenantDomain(id int64) error {
+	_, err := s.DB.Exec(`UPDATE tenant_domains SET status='active', verified_at=NOW() WHERE id=?`, id)
+	return err
+}
+
+func (s *Store) DeleteTenantDomain(u models.User, id int64) error {
+	q := `DELETE FROM tenant_domains WHERE id=?`
+	args := []any{id}
+	if u.Role == "tenant" {
+		q += ` AND tenant_id=?`
+		args = append(args, *u.TenantID)
+	}
+	_, err := s.DB.Exec(q, args...)
+	return err
+}
+
+func (s *Store) ActiveDomainForTenant(tenantID *int64) (string, error) {
+	if tenantID == nil {
+		return "", sql.ErrNoRows
+	}
+	var domain string
+	err := s.DB.QueryRow(`SELECT domain FROM tenant_domains WHERE tenant_id=? AND status='active' ORDER BY verified_at DESC,id DESC LIMIT 1`, *tenantID).Scan(&domain)
+	return domain, err
+}
+
+func scanTenantDomain(row linkScanner) (models.TenantDomain, error) {
+	var d models.TenantDomain
+	var verified sql.NullTime
+	err := row.Scan(&d.ID, &d.TenantID, &d.Domain, &d.Status, &d.VerificationToken, &d.CreatedAt, &verified)
+	if verified.Valid {
+		d.VerifiedAt = &verified.Time
+	}
+	return d, err
+}

@@ -36,11 +36,15 @@ function setupCustomerForm(){
   tenant.disabled = false;
   tenant.innerHTML = '<option value="">select tenant</option>' + tenantCache.map(t=>`<option value="${t.id}">${esc(t.name)} (${esc(t.slug)})</option>`).join('');
 }
+async function loadDomains(){ if(currentUser.role === 'customer') return; let xs = await api('/api/v1/domains'); $('#domainPanel').hidden = false; $('#domainTenant').innerHTML = currentUser.role === 'tenant' ? `<option value="${currentUser.tenant_id||''}">tenant ${currentUser.tenant_id||'-'}</option>` : '<option value="">select tenant</option>' + tenantCache.map(t=>`<option value="${t.id}">${esc(t.name)} (${esc(t.slug)})</option>`).join(''); $('#domains').innerHTML = xs.map(d=>`<div class="row"><div><b>${esc(d.domain)}</b><div class="tiny">${d.status} · tenant ${d.tenant_id}<br>CNAME ${esc(d.domain)} → ${location.hostname}<br>or TXT _shortq.${esc(d.domain)} = shortq-verify=${esc(d.verification_token)}</div></div><button onclick="verifyDomain(${d.id})">Verify</button><button onclick="delDomain(${d.id})">Delete</button></div>`).join('') || 'No custom domains'; }
+async function createDomain(e){ e.preventDefault(); let d = data(e); if(currentUser.role === 'tenant') d.tenant_id = currentUser.tenant_id; d.tenant_id = Number(d.tenant_id); try{ await api('/api/v1/domains',{method:'POST',body:JSON.stringify(d)}); e.target.reset(); await loadDomains(); }catch(x){ msg(x); } }
+async function verifyDomain(id){ try{ msg(await api('/api/v1/domains/'+id+'/verify',{method:'POST',body:'{}'})); await loadDomains(); await loadLinks(); }catch(x){ msg(x); } }
+async function delDomain(id){ await api('/api/v1/domains/'+id,{method:'DELETE'}); await loadDomains(); await loadLinks(); }
 async function loadCustomers(){ if(currentUser.role === 'customer') return; setupCustomerForm(); let xs = await api('/api/v1/customers'); $('#customerPanel').hidden = false; $('#customers').innerHTML = xs.map(u=>`<div class="row"><div><b>${esc(u.name)}</b><div class="tiny">${esc(u.email)} · ${u.role} · tenant ${u.tenant_id||'-'}</div></div></div>`).join('') || 'No users'; }
 async function createCustomer(e){ e.preventDefault(); let d = data(e); if(currentUser.role === 'tenant'){ d.role = 'customer'; d.tenant_id = currentUser.tenant_id; } if(d.tenant_id) d.tenant_id = Number(d.tenant_id); else delete d.tenant_id; try{ await api('/api/v1/customers',{method:'POST',body:JSON.stringify(d)}); e.target.reset(); setupCustomerForm(); await loadCustomers(); await loadStats(); }catch(x){ msg(x); } }
 function qr(t){ $('#qrText').value = t; makeQR(); scrollTo(0,0); }
 function makeQR(){ let t = encodeURIComponent($('#qrText').value); $('#qrImg').src = '/api/v1/qr?text='+t+'&_='+Date.now(); }
-function logout(){ token=''; currentUser=null; delete localStorage.shortqToken; $('#dash').hidden=true; $('#tenantPanel').hidden=true; $('#customerPanel').hidden=true; tab('login'); }
+function logout(){ token=''; currentUser=null; delete localStorage.shortqToken; $('#dash').hidden=true; $('#tenantPanel').hidden=true; $('#customerPanel').hidden=true; $('#domainPanel').hidden=true; tab('login'); }
 async function showDash(){
   currentUser = await api('/api/v1/me');
   $('#forms').innerHTML='';
@@ -49,7 +53,7 @@ async function showDash(){
   $('#me').textContent = `${currentUser.name} · ${currentUser.email} · ${currentUser.role} · tenant ${currentUser.tenant_id||'-'}`;
   await loadTenants();
   setupCustomerForm();
-  let tasks = [loadStats(), loadLinks(), loadKeys(), loadCustomers()];
+  let tasks = [loadStats(), loadLinks(), loadKeys(), loadCustomers(), loadDomains()];
   let results = await Promise.allSettled(tasks);
   let failed = results.find(r => r.status === 'rejected');
   if(failed) msg(failed.reason);
