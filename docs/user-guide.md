@@ -1,0 +1,226 @@
+# ShortQ User Guide
+
+ShortQ punya 3 role:
+
+- `superadmin`: kelola tenant, tenant user, customer, semua link, analytics global.
+- `tenant`: kelola customer dalam tenant sendiri, lihat link dan analytics tenant.
+- `customer`: kelola link, QR, API key milik sendiri.
+
+## Akses Aplikasi
+
+1. Buka `http://localhost:8080`.
+2. Klik `Open dashboard`.
+3. Login pakai akun yang diberikan.
+
+Default superadmin saat pertama run:
+
+- Email: `admin@shortq.local`
+- Password: `ChangeMe123!`
+
+Ganti password default sebelum production.
+
+## Superadmin Guide
+
+### Login
+
+1. Buka dashboard.
+2. Masukkan email dan password superadmin.
+3. Setelah login, dashboard menampilkan role `superadmin`.
+
+### Membuat Tenant
+
+1. Di bagian `Tenants`, isi:
+   - `tenant name`: nama tenant, contoh `Kanezza Marketing`.
+   - `tenant slug`: slug unik, contoh `kanezza-marketing`.
+2. Klik `Create tenant`.
+3. Tenant baru muncul di daftar tenant.
+4. Catat `id` tenant. ID ini dipakai saat membuat tenant user atau customer.
+
+### Membuat User Tenant
+
+1. Di bagian `Tenant / Customer users`, isi:
+   - `name`: nama user.
+   - `email`: email login.
+   - `password`: minimal 8 karakter.
+   - `role`: pilih `tenant`.
+   - `tenant id`: isi ID tenant.
+2. Klik `Create user`.
+3. User tenant bisa login dan mengelola customer tenant tersebut.
+
+### Membuat Customer
+
+1. Di bagian `Tenant / Customer users`, isi data customer.
+2. Pilih role `customer`.
+3. Isi `tenant id` sesuai tenant customer.
+4. Klik `Create user`.
+
+### Melihat Analytics Global
+
+Bagian stats menampilkan:
+
+- `total links`: semua link di sistem.
+- `total clicks`: total klik semua link.
+- `today clicks`: klik hari ini.
+- `total tenants`: jumlah tenant.
+- `total users`: jumlah semua user.
+
+### Mengelola Link
+
+Superadmin bisa melihat dan menghapus link lintas tenant/customer.
+
+1. Lihat daftar di bagian `Links`.
+2. Klik `Delete` untuk hapus link.
+3. Klik `QR` untuk generate QR dari short URL.
+
+## Tenant Guide
+
+### Login
+
+1. Login pakai akun role `tenant`.
+2. Dashboard menampilkan role `tenant` dan tenant ID.
+
+### Membuat Customer Dalam Tenant
+
+1. Di bagian `Tenant / Customer users`, isi:
+   - `name`: nama customer.
+   - `email`: email customer.
+   - `password`: minimal 8 karakter.
+   - `role`: biarkan `customer`.
+   - `tenant id`: boleh kosong; sistem otomatis memakai tenant milik user tenant.
+2. Klik `Create user`.
+3. Customer baru masuk tenant yang sama.
+
+### Melihat Customer
+
+Daftar customer hanya berisi customer dalam tenant sendiri.
+
+### Melihat Analytics Tenant
+
+Bagian stats menampilkan data tenant sendiri:
+
+- total link milik tenant.
+- total klik link tenant.
+- klik hari ini untuk tenant.
+
+### Mengelola Link Tenant
+
+Tenant bisa melihat dan menghapus link customer dalam tenant sendiri.
+
+1. Buka bagian `Links`.
+2. Klik `QR` untuk preview QR.
+3. Klik `Delete` jika perlu hapus link.
+
+## Customer Guide
+
+### Register Sendiri
+
+1. Klik `Register`.
+2. Isi nama, email, password.
+3. Klik `Register`.
+4. Login memakai email dan password tersebut.
+
+Catatan: register publik membuat customer tanpa tenant. Kalau customer harus masuk tenant, superadmin atau tenant harus membuat user customer dari dashboard.
+
+### Login
+
+1. Klik `Login`.
+2. Isi email dan password.
+3. Klik `Login`.
+
+### Membuat Short Link
+
+1. Di bagian `Links`, isi:
+   - URL target, contoh `https://www.kanezza.com/promo`.
+   - custom slug opsional, contoh `promo-agustus`.
+   - title opsional.
+2. Klik `Create short link`.
+3. Short URL muncul di daftar link.
+
+Format short URL:
+
+```text
+http://localhost:8080/r/<slug>
+```
+
+### Generate QR Code
+
+Ada 2 cara:
+
+1. Klik tombol `QR` di link yang sudah dibuat.
+2. Atau isi text/URL di kartu `Try QR`, lalu klik `Generate`.
+
+QR endpoint publik:
+
+```text
+/api/v1/qr?text=<text>
+/api/v1/qr?url=<url>
+```
+
+### Menghapus Link
+
+1. Cari link di daftar.
+2. Klik `Delete`.
+3. Link tidak bisa dipakai lagi setelah dihapus.
+
+### Membuat API Key
+
+1. Di bagian `API keys`, isi nama key.
+2. Klik `Create key`.
+3. Copy key yang muncul.
+4. Key hanya ditampilkan sekali.
+
+Contoh penggunaan API key:
+
+```bash
+curl -H 'X-API-Key: sq_live_xxx' http://localhost:8080/api/v1/links
+```
+
+### Revoke API Key
+
+1. Cari key di daftar API keys.
+2. Klik `Revoke`.
+3. Key langsung tidak bisa dipakai lagi.
+
+### Change Password
+
+1. Isi `old password`.
+2. Isi `new password` minimal 8 karakter.
+3. Klik `Change`.
+
+## Forgot Password
+
+1. Klik `Forgot`.
+2. Isi email.
+3. Klik `Generate reset`.
+4. Saat SMTP belum dikonfigurasi, reset token tampil di log server.
+5. Masuk dashboard, isi `reset token optional` dan password baru di bagian `Change password`.
+
+## API Docs
+
+- UI docs offline: `http://localhost:8080/docs`
+- OpenAPI YAML: `http://localhost:8080/docs/openapi.yaml`
+
+## Role Matrix
+
+| Feature | Superadmin | Tenant | Customer |
+|---|---:|---:|---:|
+| Create tenant | Yes | No | No |
+| List tenants | Yes | No | No |
+| Create tenant user | Yes | No | No |
+| Create customer | Yes | Yes, own tenant | No |
+| List customers | All tenant/customer users | Own tenant customers | No |
+| View links | All links | Own tenant links | Own links |
+| Delete links | All links | Own tenant links | Own links |
+| Create links | Yes | Yes | Yes |
+| Analytics | Global | Own tenant | Own links |
+| API keys | Own account | Own account | Own account |
+| QR generator | Yes | Yes | Yes |
+
+## Production Checklist
+
+- Ganti `SUPERADMIN_EMAIL` dan `SUPERADMIN_PASSWORD` di `.env`.
+- Ganti `JWT_SECRET` minimal 32 karakter acak.
+- Pakai HTTPS di reverse proxy.
+- Backup volume MySQL.
+- Set `APP_BASE_URL` ke domain production.
+- Jangan share API key di chat/log.

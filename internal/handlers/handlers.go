@@ -1,0 +1,404 @@
+package handlers
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/skip2/go-qrcode"
+
+	"shortq/internal/auth"
+	"shortq/internal/config"
+	"shortq/internal/models"
+	"shortq/internal/store"
+)
+
+type Handler struct {
+	C   config.Config
+	S   *store.Store
+	Web fs.FS
+}
+
+func New(c config.Config, s *store.Store, web fs.FS) *Handler { return &Handler{C: c, S: s, Web: web} }
+
+func (h *Handler) Routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", h.health)
+	mux.HandleFunc("/docs/openapi.yaml", h.openapi)
+	mux.HandleFunc("/docs", h.swagger)
+	mux.HandleFunc("/api/v1/auth/register", h.register)
+	mux.HandleFunc("/api/v1/auth/login", h.login)
+	mux.HandleFunc("/api/v1/auth/forgot-password", h.forgot)
+	mux.HandleFunc("/api/v1/auth/change-password", h.withAuth(h.changePassword))
+	mux.HandleFunc("/api/v1/me", h.withAuth(h.me))
+	mux.HandleFunc("/api/v1/analytics", h.withAuth(h.analytics))
+	mux.HandleFunc("/api/v1/tenants", h.withAuth(h.tenants))
+	mux.HandleFunc("/api/v1/customers", h.withAuth(h.customers))
+	mux.HandleFunc("/api/v1/links", h.withAuth(h.links))
+	mux.HandleFunc("/api/v1/links/", h.withAuth(h.linkByID))
+	mux.HandleFunc("/api/v1/qr", h.qr)
+	mux.HandleFunc("/api/v1/api-keys", h.withAuth(h.apiKeys))
+	mux.HandleFunc("/api/v1/api-keys/", h.withAuth(h.apiKeyByID))
+	mux.HandleFunc("/r/", h.redirect)
+	mux.Handle("/", http.FileServer(http.FS(h.Web)))
+	return logReq(mux)
+}
+
+func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
+	jsonOut(w, 200, map[string]string{"status": "ok"})
+}
+func (h *Handler) openapi(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "docs/openapi.yaml")
+}
+func (h *Handler) swagger(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "web/docs.html")
+}
+
+func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Email, Name, Password string }
+	if !decode(w, r, &in) {
+		return
+	}
+	if len(in.Password) < 8 {
+		errOut(w, 400, "password min 8 chars")
+		return
+	}
+	hp, _ := auth.HashPassword(in.Password)
+	if err := h.S.CreateUser(in.Email, in.Name, "customer", nil, hp); err != nil {
+		errOut(w, 400, "email already used")
+		return
+	}
+	jsonOut(w, 201, map[string]string{"message": "registered"})
+}
+
+func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Email, Password string }
+	if !decode(w, r, &in) {
+		return
+	}
+	u, p, err := h.S.UserByEmail(in.Email)
+	if err != nil || !auth.CheckPassword(p, in.Password) {
+		errOut(w, 401, "invalid credentials")
+		return
+	}
+	tok, _ := auth.SignJWT(h.C.JWTSecret, auth.Claims{UserID: u.ID, Email: u.Email, Exp: auth.TokenTTL()})
+	jsonOut(w, 200, map[string]any{"token": tok, "user": u})
+}
+
+func (h *Handler) forgot(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Email string }
+	if !decode(w, r, &in) {
+		return
+	}
+	if u, _, err := h.S.UserByEmail(in.Email); err == nil {
+		tok, _ := auth.NewToken(32)
+		_ = h.S.SaveReset(u.ID, auth.SHA256Hex(tok), auth.ResetExpiry())
+		fmt.Printf("password reset for %s: %s/reset?token=%s\n", u.Email, h.C.BaseURL, tok)
+	}
+	jsonOut(w, 200, map[string]string{"message": "if email exists, reset link generated"})
+}
+
+func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Token, OldPassword, NewPassword string }
+	if !decode(w, r, &in) {
+		return
+	}
+	if len(in.NewPassword) < 8 {
+		errOut(w, 400, "password min 8 chars")
+		return
+	}
+	uid := int64(0)
+	if in.Token != "" {
+		id, err := h.S.ConsumeReset(auth.SHA256Hex(in.Token))
+		if err != nil {
+			errOut(w, 400, "invalid reset token")
+			return
+		}
+		uid = id
+	} else {
+		u, ok := userFrom(r.Context())
+		if !ok {
+			errOut(w, 401, "auth required")
+			return
+		}
+		_, p, _ := h.S.UserByEmail(u.Email)
+		if !auth.CheckPassword(p, in.OldPassword) {
+			errOut(w, 401, "old password invalid")
+			return
+		}
+		uid = u.ID
+	}
+	hp, _ := auth.HashPassword(in.NewPassword)
+	_ = h.S.UpdatePassword(uid, hp)
+	jsonOut(w, 200, map[string]string{"message": "password changed"})
+}
+
+func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
+	u, _ := userFrom(r.Context())
+	jsonOut(w, 200, u)
+}
+func (h *Handler) analytics(w http.ResponseWriter, r *http.Request) {
+	u, _ := userFrom(r.Context())
+	a, err := h.S.Analytics(u)
+	if err != nil {
+		errOut(w, 500, err.Error())
+		return
+	}
+	jsonOut(w, 200, a)
+}
+
+func (h *Handler) tenants(w http.ResponseWriter, r *http.Request) {
+	u, _ := userFrom(r.Context())
+	if u.Role != "superadmin" {
+		errOut(w, 403, "superadmin only")
+		return
+	}
+	if r.Method == "GET" {
+		xs, err := h.S.ListTenants()
+		if err != nil {
+			errOut(w, 500, err.Error())
+			return
+		}
+		jsonOut(w, 200, xs)
+		return
+	}
+	if r.Method == "POST" {
+		var in struct{ Name, Slug string }
+		if !decode(w, r, &in) {
+			return
+		}
+		t, err := h.S.CreateTenant(in.Name, in.Slug)
+		if err != nil {
+			errOut(w, 400, err.Error())
+			return
+		}
+		jsonOut(w, 201, t)
+		return
+	}
+	w.WriteHeader(405)
+}
+
+func (h *Handler) customers(w http.ResponseWriter, r *http.Request) {
+	u, _ := userFrom(r.Context())
+	if u.Role == "customer" {
+		errOut(w, 403, "tenant or superadmin only")
+		return
+	}
+	if r.Method == "GET" {
+		xs, err := h.S.ListUsers(u)
+		if err != nil {
+			errOut(w, 500, err.Error())
+			return
+		}
+		jsonOut(w, 200, xs)
+		return
+	}
+	if r.Method == "POST" {
+		var in struct {
+			Email, Name, Password, Role string
+			TenantID                    *int64 `json:"tenant_id"`
+		}
+		if !decode(w, r, &in) {
+			return
+		}
+		role := in.Role
+		if role == "" {
+			role = "customer"
+		}
+		if u.Role == "tenant" {
+			role = "customer"
+			in.TenantID = u.TenantID
+		}
+		if u.Role == "superadmin" && role == "superadmin" {
+			errOut(w, 400, "superadmin creation disabled here")
+			return
+		}
+		if role == "customer" || role == "tenant" {
+			if in.TenantID == nil {
+				errOut(w, 400, "tenant_id required")
+				return
+			}
+		} else {
+			errOut(w, 400, "role must be tenant or customer")
+			return
+		}
+		if len(in.Password) < 8 {
+			errOut(w, 400, "password min 8 chars")
+			return
+		}
+		hp, _ := auth.HashPassword(in.Password)
+		if err := h.S.CreateUser(in.Email, in.Name, role, in.TenantID, hp); err != nil {
+			errOut(w, 400, err.Error())
+			return
+		}
+		jsonOut(w, 201, map[string]string{"message": "user created"})
+		return
+	}
+	w.WriteHeader(405)
+}
+
+func (h *Handler) links(w http.ResponseWriter, r *http.Request) {
+	u, _ := userFrom(r.Context())
+	switch r.Method {
+	case "GET":
+		xs, err := h.S.ListLinks(u)
+		if err != nil {
+			errOut(w, 500, err.Error())
+			return
+		}
+		for i := range xs {
+			xs[i].ShortURL = h.C.BaseURL + "/r/" + xs[i].Slug
+		}
+		jsonOut(w, 200, xs)
+	case "POST":
+		var in struct {
+			URL, Slug, Title string `json:",omitempty"`
+		}
+		if !decode(w, r, &in) {
+			return
+		}
+		l, err := h.S.CreateLink(u, in.Slug, in.URL, in.Title)
+		if err != nil {
+			errOut(w, 400, err.Error())
+			return
+		}
+		l.ShortURL = h.C.BaseURL + "/r/" + l.Slug
+		jsonOut(w, 201, l)
+	default:
+		w.WriteHeader(405)
+	}
+}
+
+func (h *Handler) linkByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		w.WriteHeader(405)
+		return
+	}
+	u, _ := userFrom(r.Context())
+	id, _ := strconv.ParseInt(strings.TrimPrefix(r.URL.Path, "/api/v1/links/"), 10, 64)
+	_ = h.S.DeleteLink(u, id)
+	w.WriteHeader(204)
+}
+func (h *Handler) qr(w http.ResponseWriter, r *http.Request) {
+	text := r.URL.Query().Get("text")
+	if text == "" {
+		text = r.URL.Query().Get("url")
+	}
+	if text == "" {
+		errOut(w, 400, "text or url required")
+		return
+	}
+	png, err := qrcode.Encode(text, qrcode.Medium, 256)
+	if err != nil {
+		errOut(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	_, _ = w.Write(png)
+}
+func (h *Handler) apiKeys(w http.ResponseWriter, r *http.Request) {
+	u, _ := userFrom(r.Context())
+	switch r.Method {
+	case "GET":
+		ks, err := h.S.ListAPIKeys(u.ID)
+		if err != nil {
+			errOut(w, 500, err.Error())
+			return
+		}
+		jsonOut(w, 200, ks)
+	case "POST":
+		var in struct{ Name string }
+		if !decode(w, r, &in) {
+			return
+		}
+		key, prefix, err := auth.NewAPIKey()
+		if err != nil {
+			errOut(w, 500, err.Error())
+			return
+		}
+		if err := h.S.CreateAPIKey(u.ID, in.Name, auth.SHA256Hex(key), prefix); err != nil {
+			errOut(w, 500, err.Error())
+			return
+		}
+		jsonOut(w, 201, map[string]string{"key": key, "prefix": prefix})
+	default:
+		w.WriteHeader(405)
+	}
+}
+func (h *Handler) apiKeyByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		w.WriteHeader(405)
+		return
+	}
+	u, _ := userFrom(r.Context())
+	id, _ := strconv.ParseInt(strings.TrimPrefix(r.URL.Path, "/api/v1/api-keys/"), 10, 64)
+	_ = h.S.RevokeAPIKey(u.ID, id)
+	w.WriteHeader(204)
+}
+func (h *Handler) redirect(w http.ResponseWriter, r *http.Request) {
+	slug := strings.TrimPrefix(r.URL.Path, "/r/")
+	l, err := h.S.LinkBySlug(slug)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.S.TrackClick(l.ID, r.RemoteAddr, r.UserAgent(), r.Referer())
+	http.Redirect(w, r, l.TargetURL, 302)
+}
+
+func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/auth/change-password" && r.Header.Get("Authorization") == "" && r.Header.Get("X-API-Key") == "" {
+			next(w, r)
+			return
+		}
+		if key := r.Header.Get("X-API-Key"); key != "" {
+			u, err := h.S.UserByAPIKey(auth.SHA256Hex(key))
+			if err == nil {
+				next(w, r.WithContext(withUser(r.Context(), u)))
+				return
+			}
+		}
+		bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		c, err := auth.ParseJWT(h.C.JWTSecret, bearer)
+		if err != nil {
+			errOut(w, 401, "auth required")
+			return
+		}
+		u, err := h.S.UserByID(c.UserID)
+		if err != nil {
+			errOut(w, 401, "auth required")
+			return
+		}
+		next(w, r.WithContext(withUser(r.Context(), u)))
+	}
+}
+
+func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		errOut(w, 400, "bad json")
+		return false
+	}
+	return true
+}
+func jsonOut(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}
+func errOut(w http.ResponseWriter, code int, msg string) {
+	jsonOut(w, code, map[string]string{"error": msg})
+}
+func logReq(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		fmt.Printf("%s %s %s\n", r.Method, r.URL.Path, time.Since(start))
+	})
+}
+
+var _ = models.User{}

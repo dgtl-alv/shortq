@@ -1,0 +1,67 @@
+const $ = s => document.querySelector(s);
+let token = localStorage.shortqToken || '';
+let currentUser = null;
+let tenantCache = [];
+function msg(x){ $('#msg').textContent = typeof x === 'string' ? x : JSON.stringify(x,null,2); }
+async function api(path,opt={}){ opt.headers = {...(opt.headers||{}),'Content-Type':'application/json'}; if(token) opt.headers.Authorization = 'Bearer '+token; let r = await fetch(path,opt); if(r.status===204) return null; let j = await r.json().catch(()=>({})); if(!r.ok) throw j; return j; }
+function setAuthNav(loggedIn){ $('#loginTab').hidden = loggedIn; $('#registerTab').hidden = loggedIn; $('#forgotTab').hidden = loggedIn; $('#logoutTab').hidden = !loggedIn; }
+function tab(name){ setAuthNav(false); $('#dash').hidden = true; let html = {login:`<h2>Login</h2><form onsubmit="login(event)"><input name="email" type="email" required placeholder="email"><input name="password" type="password" required placeholder="password"><button>Login</button></form>`,register:`<h2>Register customer</h2><form onsubmit="register(event)"><input name="name" required placeholder="name"><input name="email" type="email" required placeholder="email"><input name="password" type="password" required placeholder="password min 8"><button>Register</button></form>`,forgot:`<h2>Forgot password</h2><form onsubmit="forgot(event)"><input name="email" type="email" required placeholder="email"><button>Generate reset</button></form>`}[name]; $('#forms').innerHTML = html; }
+function data(e){ return Object.fromEntries(new FormData(e.target).entries()); }
+async function register(e){ e.preventDefault(); try{ msg(await api('/api/v1/auth/register',{method:'POST',body:JSON.stringify(data(e))})); tab('login'); }catch(x){ msg(x); } }
+async function login(e){ e.preventDefault(); try{ let r = await api('/api/v1/auth/login',{method:'POST',body:JSON.stringify(data(e))}); token = r.token; localStorage.shortqToken = token; msg('logged in'); await showDash(); }catch(x){ msg(x); } }
+async function forgot(e){ e.preventDefault(); try{ msg(await api('/api/v1/auth/forgot-password',{method:'POST',body:JSON.stringify(data(e))})); }catch(x){ msg(x); } }
+async function changePass(e){ e.preventDefault(); try{ msg(await api('/api/v1/auth/change-password',{method:'POST',body:JSON.stringify(data(e))})); }catch(x){ msg(x); } }
+async function createLink(e){ e.preventDefault(); try{ await api('/api/v1/links',{method:'POST',body:JSON.stringify(data(e))}); e.target.reset(); await loadLinks(); await loadStats(); }catch(x){ msg(x); } }
+async function loadLinks(){ let xs = await api('/api/v1/links'); $('#links').innerHTML = xs.map(x=>`<div class="row"><div><b>${esc(x.title||x.slug)}</b><br><a href="${x.short_url}" target="_blank">${x.short_url}</a><div class="tiny">${esc(x.target_url)} · ${x.clicks} clicks · user ${x.user_id}</div></div><button onclick="qr('${x.short_url}')">QR</button><button onclick="delLink(${x.id})">Delete</button></div>`).join('') || 'No links'; }
+async function delLink(id){ await api('/api/v1/links/'+id,{method:'DELETE'}); await loadLinks(); await loadStats(); }
+async function createKey(e){ e.preventDefault(); try{ let r = await api('/api/v1/api-keys',{method:'POST',body:JSON.stringify(data(e))}); $('#newKey').textContent = 'Copy now, shown once:\n'+r.key; e.target.reset(); await loadKeys(); }catch(x){ msg(x); } }
+async function loadKeys(){ let xs = await api('/api/v1/api-keys'); $('#keys').innerHTML = xs.map(k=>`<div class="row"><div><b>${esc(k.name)}</b><div class="tiny">${k.prefix} · created ${new Date(k.created_at).toLocaleString()}</div></div><button onclick="delKey(${k.id})">Revoke</button></div>`).join('') || 'No keys'; }
+async function delKey(id){ await api('/api/v1/api-keys/'+id,{method:'DELETE'}); await loadKeys(); }
+async function loadStats(){ let a = await api('/api/v1/analytics'); $('#stats').innerHTML = Object.entries(a).filter(([k,v])=>v!==0).map(([k,v])=>`<div><b>${v}</b><span>${k.replaceAll('_',' ')}</span></div>`).join(''); }
+async function loadTenants(){ if(currentUser.role !== 'superadmin') return; tenantCache = await api('/api/v1/tenants'); $('#tenantPanel').hidden = false; $('#tenants').innerHTML = tenantCache.map(t=>`<div class="row"><div><b>${esc(t.name)}</b><div class="tiny">id ${t.id} · ${esc(t.slug)}</div></div></div>`).join('') || 'No tenants'; }
+async function createTenant(e){ e.preventDefault(); try{ await api('/api/v1/tenants',{method:'POST',body:JSON.stringify(data(e))}); e.target.reset(); await loadTenants(); setupCustomerForm(); await loadStats(); }catch(x){ msg(x); } }
+function setupCustomerForm(){
+  if(currentUser.role === 'customer') return;
+  let role = $('#customerRole');
+  let tenant = $('#customerTenant');
+  if(currentUser.role === 'tenant'){
+    role.innerHTML = '<option value="customer">customer</option>';
+    role.disabled = true;
+    tenant.innerHTML = `<option value="${currentUser.tenant_id||''}">tenant ${currentUser.tenant_id||'-'}</option>`;
+    tenant.disabled = true;
+    return;
+  }
+  role.disabled = false;
+  role.innerHTML = '<option value="customer">customer</option><option value="tenant">tenant</option>';
+  tenant.disabled = false;
+  tenant.innerHTML = '<option value="">select tenant</option>' + tenantCache.map(t=>`<option value="${t.id}">${esc(t.name)} (${esc(t.slug)})</option>`).join('');
+}
+async function loadCustomers(){ if(currentUser.role === 'customer') return; setupCustomerForm(); let xs = await api('/api/v1/customers'); $('#customerPanel').hidden = false; $('#customers').innerHTML = xs.map(u=>`<div class="row"><div><b>${esc(u.name)}</b><div class="tiny">${esc(u.email)} · ${u.role} · tenant ${u.tenant_id||'-'}</div></div></div>`).join('') || 'No users'; }
+async function createCustomer(e){ e.preventDefault(); let d = data(e); if(currentUser.role === 'tenant'){ d.role = 'customer'; d.tenant_id = currentUser.tenant_id; } if(d.tenant_id) d.tenant_id = Number(d.tenant_id); else delete d.tenant_id; try{ await api('/api/v1/customers',{method:'POST',body:JSON.stringify(d)}); e.target.reset(); setupCustomerForm(); await loadCustomers(); await loadStats(); }catch(x){ msg(x); } }
+function qr(t){ $('#qrText').value = t; makeQR(); scrollTo(0,0); }
+function makeQR(){ let t = encodeURIComponent($('#qrText').value); $('#qrImg').src = '/api/v1/qr?text='+t+'&_='+Date.now(); }
+function logout(){ token=''; currentUser=null; delete localStorage.shortqToken; $('#dash').hidden=true; $('#tenantPanel').hidden=true; $('#customerPanel').hidden=true; tab('login'); }
+async function showDash(){
+  currentUser = await api('/api/v1/me');
+  $('#forms').innerHTML='';
+  $('#dash').hidden=false;
+  setAuthNav(true);
+  $('#me').textContent = `${currentUser.name} · ${currentUser.email} · ${currentUser.role} · tenant ${currentUser.tenant_id||'-'}`;
+  await loadTenants();
+  setupCustomerForm();
+  let tasks = [loadStats(), loadLinks(), loadKeys(), loadCustomers()];
+  let results = await Promise.allSettled(tasks);
+  let failed = results.find(r => r.status === 'rejected');
+  if(failed) msg(failed.reason);
+}
+async function restoreSession(){
+  if(!token){ setAuthNav(false); tab('login'); return; }
+  try{
+    await showDash();
+  }catch(e){
+    if(e && (e.error === 'auth required' || e.error === 'expired token' || e.error === 'invalid token')) logout();
+    else { tab('login'); msg(e); }
+  }
+}
+function esc(s){ return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+restoreSession();

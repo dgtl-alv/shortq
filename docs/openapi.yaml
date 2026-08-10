@@ -1,0 +1,132 @@
+openapi: 3.0.3
+info:
+  title: ShortQ API
+  version: 1.1.0
+  description: Multi-tenant URL shortener and QR generator. Roles: superadmin, tenant, customer.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+  - apiKeyAuth: []
+paths:
+  /healthz:
+    get:
+      security: []
+      responses:
+        '200': {description: OK}
+  /api/v1/auth/register:
+    post:
+      security: []
+      description: Public customer registration without tenant assignment.
+      requestBody: {$ref: '#/components/requestBodies/Register'}
+      responses: {'201': {description: Registered}}
+  /api/v1/auth/login:
+    post:
+      security: []
+      requestBody: {$ref: '#/components/requestBodies/Login'}
+      responses: {'200': {description: JWT token}}
+  /api/v1/auth/forgot-password:
+    post:
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [email], properties: {email: {type: string, format: email}}}
+      responses: {'200': {description: Reset generated when email exists}}
+  /api/v1/auth/change-password:
+    post:
+      description: Bearer auth with oldPassword, or reset token without auth.
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [newPassword], properties: {oldPassword: {type: string}, newPassword: {type: string, minLength: 8}, token: {type: string}}}
+      responses: {'200': {description: Password changed}}
+  /api/v1/me:
+    get:
+      responses: {'200': {description: Current user, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}}
+  /api/v1/analytics:
+    get:
+      description: Scope follows role. Superadmin sees all, tenant sees own tenant, customer sees own links.
+      responses: {'200': {description: Analytics summary, content: {application/json: {schema: {$ref: '#/components/schemas/Analytics'}}}}}
+  /api/v1/tenants:
+    get:
+      description: Superadmin only.
+      responses: {'200': {description: List tenants}}
+    post:
+      description: Superadmin only.
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [name, slug], properties: {name: {type: string}, slug: {type: string}}}
+      responses: {'201': {description: Tenant created}}
+  /api/v1/customers:
+    get:
+      description: Superadmin lists tenant/customer users. Tenant lists customers in own tenant.
+      responses: {'200': {description: List users}}
+    post:
+      description: Superadmin creates tenant/customer users. Tenant creates customers in own tenant.
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [email, name, password], properties: {email: {type: string}, name: {type: string}, password: {type: string, minLength: 8}, role: {type: string, enum: [tenant, customer]}, tenant_id: {type: integer}}}
+      responses: {'201': {description: User created}}
+  /api/v1/links:
+    get:
+      description: Scope follows role.
+      responses: {'200': {description: List links}}
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [url], properties: {url: {type: string}, slug: {type: string}, title: {type: string}}}
+      responses: {'201': {description: Link created}}
+  /api/v1/links/{id}:
+    delete:
+      parameters: [{name: id, in: path, required: true, schema: {type: integer}}]
+      responses: {'204': {description: Deleted}}
+  /api/v1/qr:
+    get:
+      security: []
+      parameters:
+        - {name: text, in: query, schema: {type: string}}
+        - {name: url, in: query, schema: {type: string}}
+      responses:
+        '200': {description: PNG QR, content: {image/png: {schema: {type: string, format: binary}}}}
+  /api/v1/api-keys:
+    get:
+      responses: {'200': {description: List API keys}}
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [name], properties: {name: {type: string}}}
+      responses: {'201': {description: New API key, only shown once}}
+  /api/v1/api-keys/{id}:
+    delete:
+      parameters: [{name: id, in: path, required: true, schema: {type: integer}}]
+      responses: {'204': {description: Revoked}}
+  /r/{slug}:
+    get:
+      security: []
+      parameters: [{name: slug, in: path, required: true, schema: {type: string}}]
+      responses: {'302': {description: Redirect to target URL}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+    apiKeyAuth: {type: apiKey, in: header, name: X-API-Key}
+  requestBodies:
+    Register:
+      content:
+        application/json:
+          schema: {type: object, required: [email, name, password], properties: {email: {type: string, format: email}, name: {type: string}, password: {type: string, minLength: 8}}}
+    Login:
+      content:
+        application/json:
+          schema: {type: object, required: [email, password], properties: {email: {type: string}, password: {type: string}}}
+  schemas:
+    User:
+      type: object
+      properties: {id: {type: integer}, tenant_id: {type: integer, nullable: true}, email: {type: string}, name: {type: string}, role: {type: string, enum: [superadmin, tenant, customer]}}
+    Analytics:
+      type: object
+      properties: {total_links: {type: integer}, total_clicks: {type: integer}, today_clicks: {type: integer}, total_tenants: {type: integer}, total_users: {type: integer}}
