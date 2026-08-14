@@ -34,6 +34,8 @@ body:before{
 }
 main{max-width:1180px;margin:auto;padding:30px}
 .hero{min-height:82vh;display:grid;grid-template-columns:minmax(0,1.2fr) 380px;gap:34px;align-items:center}
+.dashboard-shell{margin-top:18px;min-height:calc(100vh - 60px)}
+.dashboard-shell h1{font-size:clamp(42px,6vw,72px)}
 .hero-copy{animation:rise .55s ease both}
 .eyebrow{margin:0 0 10px;letter-spacing:.18em;text-transform:uppercase;color:var(--forest);font-size:12px;font-weight:900}
 h1,h2,h3{margin:0;color:var(--ink);letter-spacing:-.045em}

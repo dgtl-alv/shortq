@@ -3,42 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ShortQ</title>
+  <title>ShortQ Dashboard</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <main>
-    <section class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow">Multi-tenant Short URL + QR API</p>
-        <h1>Short links with tenant-grade control.</h1>
-        <p class="lede">Build branded short URLs, QR assets, and API keys from one crisp dashboard. Plain Go backend. MySQL storage. No CDN.</p>
-        <div class="actions">
-          <a href="#app">Open Dashboard</a>
-          <a class="ghost" href="/docs">API Docs</a>
-        </div>
-      </div>
-      <div class="card qr-card">
-        <div class="card-head">
-          <span>QR Lab</span>
-          <b>Instant PNG</b>
-        </div>
-        <input id="qrText" value="https://www.kanezza.com" aria-label="QR text">
-        <button onclick="makeQR()">Generate QR</button>
-        <img id="qrImg" alt="QR preview">
-      </div>
-    </section>
-
-    <section id="app" class="panel app-shell">
+    <section id="app" class="panel app-shell dashboard-shell">
       <div class="panel-top">
         <div>
-          <p class="eyebrow">Control Room</p>
-          <h2>Dashboard</h2>
+          <p class="eyebrow">ShortQ Control Room</p>
+          <h1>Dashboard</h1>
+          <p class="lede">Create, copy, track, and manage ALVA short links.</p>
         </div>
         <nav>
-          <button id="loginTab" onclick="tab()">Login with Microsoft</button>
-          <button id="registerTab" onclick="tab('register')">Register</button>
-          <button id="forgotTab" onclick="tab('forgot')">Forgot</button>
+          <button id="loginTab" onclick="login()">Login with Microsoft</button>
+          <button id="registerTab" onclick="login()" hidden>Register</button>
+          <button id="forgotTab" onclick="login()" hidden>Forgot</button>
           <button id="logoutTab" class="danger" onclick="logout()" hidden>Logout</button>
         </nav>
       </div>
@@ -49,7 +29,47 @@
         <div id="me" class="identity-pill"></div>
         <div id="stats" class="stats"></div>
 
+        <section class="module feature-module">
+          <div class="module-head">
+            <h3>Create shortened link</h3>
+            <span>Short URL builder</span>
+          </div>
+          <form class="form-grid links-form" onsubmit="createLink(event)">
+            <input name="url" placeholder="Paste long URL, e.g. https://alvaauto.com/..." required>
+            <input name="slug" placeholder="Custom slug optional">
+            <input name="title" placeholder="Internal title optional">
+            <button>Create short link</button>
+          </form>
+          <div class="tiny">Output uses public redirect path <b>/r/&lt;slug&gt;</b>. Short links remain public.</div>
+          <div id="links" class="list"></div>
+        </section>
+
         <div class="grid two">
+          <section class="module">
+            <div class="module-head">
+              <h3>QR Code</h3>
+              <span>Instant PNG</span>
+            </div>
+            <input id="qrText" value="https://s.alvaauto.com" aria-label="QR text">
+            <button onclick="makeQR()">Generate QR</button>
+            <img id="qrImg" alt="QR preview">
+          </section>
+
+          <section class="module">
+            <div class="module-head">
+              <h3>API Keys</h3>
+              <span>Shown once</span>
+            </div>
+            <form class="form-grid" onsubmit="createKey(event)">
+              <input name="name" placeholder="key name" required>
+              <button>Create key</button>
+            </form>
+            <pre id="newKey"></pre>
+            <div id="keys" class="list"></div>
+          </section>
+        </div>
+
+        <div class="grid two admin-grid">
           <section id="tenantPanel" class="module" hidden>
             <div class="module-head">
               <h3>Tenants</h3>
@@ -62,7 +82,6 @@
             </form>
             <div id="tenants" class="list"></div>
           </section>
-
 
           <section id="domainPanel" class="module" hidden>
             <div class="module-head">
@@ -101,53 +120,11 @@
             <div id="customers" class="list"></div>
           </section>
         </div>
-
-        <section class="module feature-module">
-          <div class="module-head">
-            <h3>Links</h3>
-            <span>Short URL builder</span>
-          </div>
-          <form class="form-grid links-form" onsubmit="createLink(event)">
-            <input name="url" placeholder="https://example.com" required>
-            <input name="slug" placeholder="custom slug optional">
-            <input name="title" placeholder="title">
-            <button>Create short link</button>
-          </form>
-          <div id="links" class="list"></div>
-        </section>
-
-        <div class="grid two">
-          <section class="module">
-            <div class="module-head">
-              <h3>API Keys</h3>
-              <span>Shown once</span>
-            </div>
-            <form class="form-grid" onsubmit="createKey(event)">
-              <input name="name" placeholder="key name" required>
-              <button>Create key</button>
-            </form>
-            <pre id="newKey"></pre>
-            <div id="keys" class="list"></div>
-          </section>
-
-          <section class="module">
-            <div class="module-head">
-              <h3>Change Password</h3>
-              <span>Account security</span>
-            </div>
-            <form class="form-grid" onsubmit="changePass(event)">
-              <input name="oldPassword" type="password" placeholder="old password">
-              <input name="newPassword" type="password" placeholder="new password" required>
-              <input name="token" placeholder="reset token optional">
-              <button>Change password</button>
-            </form>
-          </section>
-        </div>
       </div>
 
       <pre id="msg"></pre>
     </section>
   </main>
-  <script src="/app.js?v=20260814-sso"></script>
+  <script src="/app.js?v=20260814-dashboard"></script>
 </body>
 </html>
