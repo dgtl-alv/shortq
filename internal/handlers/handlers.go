@@ -50,7 +50,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/qr", h.qr)
 	mux.HandleFunc("/api/v1/api-keys", h.withAuth(h.apiKeys))
 	mux.HandleFunc("/api/v1/api-keys/", h.withAuth(h.apiKeyByID))
-	mux.HandleFunc("/r/", h.redirect)
+	mux.HandleFunc("/r/", h.redirectLegacy)
 	mux.HandleFunc("/", h.web)
 	return logReq(mux)
 }
@@ -64,8 +64,25 @@ func (h *Handler) web(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/auth/microsoft/login", http.StatusFound)
 			return
 		}
+		http.FileServer(http.FS(h.Web)).ServeHTTP(w, r)
+		return
 	}
-	http.FileServer(http.FS(h.Web)).ServeHTTP(w, r)
+	if isReservedRootPath(r.URL.Path) {
+		http.FileServer(http.FS(h.Web)).ServeHTTP(w, r)
+		return
+	}
+	h.redirectSlug(w, r, strings.Trim(r.URL.Path, "/"))
+}
+
+func isReservedRootPath(path string) bool {
+	clean := strings.Trim(path, "/")
+	if clean == "" || strings.Contains(clean, "/") {
+		return true
+	}
+	reserved := map[string]bool{
+		"app.js": true, "style.css": true, "docs.html": true, "favicon.ico": true, "robots.txt": true,
+	}
+	return reserved[clean] || strings.Contains(clean, ".")
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
@@ -371,8 +388,16 @@ func (h *Handler) apiKeyByID(w http.ResponseWriter, r *http.Request) {
 	_ = h.S.RevokeAPIKey(u.ID, id)
 	w.WriteHeader(204)
 }
-func (h *Handler) redirect(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) redirectLegacy(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimPrefix(r.URL.Path, "/r/")
+	h.redirectSlug(w, r, slug)
+}
+
+func (h *Handler) redirectSlug(w http.ResponseWriter, r *http.Request, slug string) {
+	if slug == "" || strings.Contains(slug, "/") || isReservedRootPath("/"+slug) {
+		http.NotFound(w, r)
+		return
+	}
 	l, err := h.S.LinkBySlug(slug)
 	if err != nil {
 		http.NotFound(w, r)
@@ -527,9 +552,9 @@ func (h *Handler) verifyDomain(d models.TenantDomain) bool {
 
 func (h *Handler) shortURL(l models.Link) string {
 	if domain, err := h.S.ActiveDomainForTenant(l.TenantID); err == nil && domain != "" {
-		return "https://" + domain + "/r/" + l.Slug
+		return "https://" + domain + "/" + l.Slug
 	}
-	return strings.TrimRight(h.C.BaseURL, "/") + "/r/" + l.Slug
+	return strings.TrimRight(h.C.BaseURL, "/") + "/" + l.Slug
 }
 
 func (h *Handler) baseHost() string {
