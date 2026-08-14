@@ -51,8 +51,21 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/api-keys", h.withAuth(h.apiKeys))
 	mux.HandleFunc("/api/v1/api-keys/", h.withAuth(h.apiKeyByID))
 	mux.HandleFunc("/r/", h.redirect)
-	mux.Handle("/", http.FileServer(http.FS(h.Web)))
+	mux.HandleFunc("/", h.web)
 	return logReq(mux)
+}
+
+func (h *Handler) web(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+		if _, ok := h.userFromSession(r); !ok {
+			http.Redirect(w, r, "/auth/microsoft/login", http.StatusFound)
+			return
+		}
+	}
+	http.FileServer(http.FS(h.Web)).ServeHTTP(w, r)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
