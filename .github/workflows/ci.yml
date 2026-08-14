@@ -37,4 +37,17 @@ jobs:
         run: git diff --check
 
       - name: Validate Docker Compose
-        run: docker compose -f docker-compose.yml config --quiet
+        run: |
+          cat > .env <<'EOF'
+          DB_DSN=shortq:shortqpass@tcp(db:3306)/shortq?parseTime=true
+          BASE_URL=http://localhost:8080
+          SESSION_SECRET=ci-session-secret
+          SUPERADMIN_EMAIL=ci@example.com
+          SUPERADMIN_PASSWORD=ci-password
+          OIDC_ISSUER_URL=https://login.microsoftonline.com/common/v2.0
+          OIDC_CLIENT_ID=ci-client-id
+          OIDC_CLIENT_SECRET=ci-client-secret
+          OIDC_REDIRECT_URL=http://localhost:8080/auth/microsoft/callback
+          EOF
+          docker compose -f docker-compose.yml config --quiet
+          rm -f .env
