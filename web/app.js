@@ -58,7 +58,7 @@ async function createLink(e) {
 }
 
 async function loadLinks() {
-  const xs = await api('/api/v1/links');
+  const xs = await api('/api/v1/links') || [];
   $('#links').innerHTML = xs.map(x => `
     <div class="row">
       <div>
@@ -89,7 +89,7 @@ async function createKey(e) {
 }
 
 async function loadKeys() {
-  const xs = await api('/api/v1/api-keys');
+  const xs = await api('/api/v1/api-keys') || [];
   $('#keys').innerHTML = xs.map(k => `
     <div class="row one-action">
       <div><b>${esc(k.name)}</b><div class="tiny">${esc(k.prefix)} · ${new Date(k.created_at).toLocaleString()}</div></div>
@@ -112,7 +112,7 @@ async function loadStats() {
 
 async function loadTenants() {
   if (currentUser.role !== 'superadmin') return;
-  tenantCache = await api('/api/v1/tenants');
+  tenantCache = await api('/api/v1/tenants') || [];
   $('#tenantPanel').hidden = false;
   $('#tenants').innerHTML = tenantCache.map(t => `<div class="row no-actions"><div><b>${esc(t.name)}</b><div class="tiny">id ${t.id} · ${esc(t.slug)}</div></div></div>`).join('') || '<div class="empty">No tenants.</div>';
 }
@@ -148,7 +148,7 @@ function setupCustomerForm() {
 
 async function loadDomains() {
   if (currentUser.role === 'customer') return;
-  const xs = await api('/api/v1/domains');
+  const xs = await api('/api/v1/domains') || [];
   $('#domainPanel').hidden = false;
   $('#domainTenant').innerHTML = currentUser.role === 'tenant'
     ? `<option value="${currentUser.tenant_id || ''}">tenant ${currentUser.tenant_id || '-'}</option>`
@@ -187,7 +187,7 @@ async function delDomain(id) {
 async function loadCustomers() {
   if (currentUser.role === 'customer') return;
   setupCustomerForm();
-  const xs = await api('/api/v1/customers');
+  const xs = await api('/api/v1/customers') || [];
   $('#customerPanel').hidden = false;
   $('#customers').innerHTML = xs.map(u => `<div class="row no-actions"><div><b>${esc(u.name)}</b><div class="tiny">${esc(u.email)} · ${esc(u.role)} · tenant ${u.tenant_id || '-'}</div></div></div>`).join('') || '<div class="empty">No users.</div>';
 }
