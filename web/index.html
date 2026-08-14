@@ -100,13 +100,13 @@
         <div class="card-title">
           <div>
             <p class="eyebrow">Admin</p>
-            <h2>Tenants</h2>
+            <h2>Departments</h2>
           </div>
         </div>
         <form class="inline-form" onsubmit="createTenant(event)">
-          <input name="name" placeholder="Tenant name" required>
-          <input name="slug" placeholder="tenant-slug" required>
-          <button type="submit">Create tenant</button>
+          <input name="name" placeholder="Department name" required>
+          <input name="slug" placeholder="department-slug" required>
+          <button type="submit">Create department</button>
         </form>
         <div id="tenants" class="list small"></div>
       </section>
@@ -116,7 +116,7 @@
           <p class="eyebrow">Admin</p>
           <h2>Domains</h2>
           <form class="form-grid" onsubmit="createDomain(event)">
-            <label>Tenant
+            <label>Department
               <select id="domainTenant" name="tenant_id"></select>
             </label>
             <label>Domain
@@ -134,7 +134,7 @@
             <label>Name<input name="name" placeholder="User name" required></label>
             <label>Email<input name="email" type="email" placeholder="user@example.com" required></label>
             <label>Role<select id="customerRole" name="role"></select></label>
-            <label>Tenant<select id="customerTenant" name="tenant_id"></select></label>
+            <label>Department<select id="customerTenant" name="tenant_id"></select></label>
             <input name="password" type="hidden" value="MicrosoftSSOOnly123!">
             <button type="submit">Create user</button>
           </form>
@@ -143,6 +143,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260814-loginfix1"></script>
+  <script src="/app.js?v=20260814-dept-domain1"></script>
 </body>
 </html>

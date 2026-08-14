@@ -25,6 +25,7 @@ async function api(path, opt = {}) {
 
 // All template innerHTML below uses esc() for user/API text and fixed markup for controls.
 function esc(s) { return String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function roleLabel(role) { return ({ superadmin: 'admin', tenant: 'department admin', customer: 'user' })[role] || role; }
 function data(e) { return Object.fromEntries(new FormData(e.target).entries()); }
 function login() { location.href = '/auth/microsoft/login'; }
 function logout() { location.href = '/auth/logout'; }
@@ -114,7 +115,7 @@ async function loadTenants() {
   if (currentUser.role !== 'superadmin') return;
   tenantCache = await api('/api/v1/tenants') || [];
   $('#tenantPanel').hidden = false;
-  $('#tenants').innerHTML = tenantCache.map(t => `<div class="row no-actions"><div><b>${esc(t.name)}</b><div class="tiny">id ${t.id} · ${esc(t.slug)}</div></div></div>`).join('') || '<div class="empty">No tenants.</div>';
+  $('#tenants').innerHTML = tenantCache.map(t => `<div class="row no-actions"><div><b>${esc(t.name)}</b><div class="tiny">id ${t.id} · ${esc(t.slug)}</div></div></div>`).join('') || '<div class="empty">No departments.</div>';
 }
 
 async function createTenant(e) {
@@ -122,7 +123,7 @@ async function createTenant(e) {
   try {
     await api('/api/v1/tenants', { method: 'POST', body: JSON.stringify(data(e)) });
     e.target.reset();
-    showMsg('Tenant created.', 'ok');
+    showMsg('Department created.', 'ok');
     await Promise.all([loadTenants(), loadStats()]);
     setupCustomerForm();
     await loadDomains();
@@ -134,16 +135,16 @@ function setupCustomerForm() {
   const role = $('#customerRole');
   const tenant = $('#customerTenant');
   if (currentUser.role === 'tenant') {
-    role.innerHTML = '<option value="customer">customer</option>';
+    role.innerHTML = '<option value="customer">user</option>';
     role.disabled = true;
-    tenant.innerHTML = `<option value="${currentUser.tenant_id || ''}">tenant ${currentUser.tenant_id || '-'}</option>`;
+    tenant.innerHTML = `<option value="${currentUser.tenant_id || ''}">department ${currentUser.tenant_id || '-'}</option>`;
     tenant.disabled = true;
     return;
   }
   role.disabled = false;
-  role.innerHTML = '<option value="customer">customer</option><option value="tenant">tenant</option>';
+  role.innerHTML = '<option value="customer">user</option><option value="tenant">department admin</option>';
   tenant.disabled = false;
-  tenant.innerHTML = '<option value="">select tenant</option>' + tenantCache.map(t => `<option value="${t.id}">${esc(t.name)} (${esc(t.slug)})</option>`).join('');
+  tenant.innerHTML = '<option value="">select department</option>' + tenantCache.map(t => `<option value="${t.id}">${esc(t.name)} (${esc(t.slug)})</option>`).join('');
 }
 
 async function loadDomains() {
@@ -151,11 +152,11 @@ async function loadDomains() {
   const xs = await api('/api/v1/domains') || [];
   $('#domainPanel').hidden = false;
   $('#domainTenant').innerHTML = currentUser.role === 'tenant'
-    ? `<option value="${currentUser.tenant_id || ''}">tenant ${currentUser.tenant_id || '-'}</option>`
-    : '<option value="">select tenant</option>' + tenantCache.map(t => `<option value="${t.id}">${esc(t.name)} (${esc(t.slug)})</option>`).join('');
+    ? `<option value="${currentUser.tenant_id || ''}">department ${currentUser.tenant_id || '-'}</option>`
+    : '<option value="">select department</option>' + tenantCache.map(t => `<option value="${t.id}">${esc(t.name)} (${esc(t.slug)})</option>`).join('');
   $('#domains').innerHTML = xs.map(d => `
     <div class="row">
-      <div><b>${esc(d.domain)}</b><div class="tiny">${esc(d.status)} · tenant ${d.tenant_id}<br>TXT _shortq.${esc(d.domain)} = shortq-verify=${esc(d.verification_token)}</div></div>
+      <div><b>${esc(d.domain)}</b><div class="tiny">${esc(d.status)} · department ${d.tenant_id}<br>TXT _shortq.${esc(d.domain)} = shortq-verify=${esc(d.verification_token)}</div></div>
       <button class="secondary" onclick="verifyDomain(${d.id})">Verify</button>
       <button class="danger" onclick="delDomain(${d.id})">Delete</button>
     </div>`).join('') || '<div class="empty">No custom domains.</div>';
@@ -189,7 +190,7 @@ async function loadCustomers() {
   setupCustomerForm();
   const xs = await api('/api/v1/customers') || [];
   $('#customerPanel').hidden = false;
-  $('#customers').innerHTML = xs.map(u => `<div class="row no-actions"><div><b>${esc(u.name)}</b><div class="tiny">${esc(u.email)} · ${esc(u.role)} · tenant ${u.tenant_id || '-'}</div></div></div>`).join('') || '<div class="empty">No users.</div>';
+  $('#customers').innerHTML = xs.map(u => `<div class="row no-actions"><div><b>${esc(u.name)}</b><div class="tiny">${esc(u.email)} · ${esc(roleLabel(u.role))} · department ${u.tenant_id || '-'}</div></div></div>`).join('') || '<div class="empty">No users.</div>';
 }
 async function createCustomer(e) {
   e.preventDefault();
@@ -220,7 +221,7 @@ async function showDash() {
   currentUser = await api('/api/v1/me');
   if (!currentUser) return;
   showApp();
-  $('#me').textContent = `${currentUser.name} · ${currentUser.email} · ${currentUser.role}`;
+  $('#me').textContent = `${currentUser.name} · ${currentUser.email} · ${roleLabel(currentUser.role)}`;
   await loadTenants();
   setupCustomerForm();
   const tasks = [loadStats(), loadLinks(), loadKeys(), loadCustomers(), loadDomains()];

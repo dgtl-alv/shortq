@@ -133,8 +133,13 @@ func (h *Handler) oauthConfig(ctx context.Context) (*oauth2.Config, error) {
 }
 
 func (h *Handler) allowedMicrosoftUser(email string) bool {
+	email = strings.ToLower(strings.TrimSpace(email))
+	allowedDomain := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(h.C.OIDCAllowedDomain)), "@")
+	if allowedDomain != "" && strings.HasSuffix(email, "@"+allowedDomain) {
+		return true
+	}
 	allowed := strings.ToLower(strings.TrimSpace(h.C.OIDCAllowedEmail))
-	return allowed != "" && strings.ToLower(strings.TrimSpace(email)) == allowed
+	return allowed != "" && email == allowed
 }
 
 func (h *Handler) ensureSSOUser(email, name string) (models.User, error) {
