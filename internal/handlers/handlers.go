@@ -36,6 +36,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/auth/login", h.login)
 	mux.HandleFunc("/api/v1/auth/forgot-password", h.forgot)
 	mux.HandleFunc("/api/v1/auth/change-password", h.withAuth(h.changePassword))
+	mux.HandleFunc("/auth/microsoft/login", h.microsoftLogin)
+	mux.HandleFunc("/auth/microsoft/callback", h.microsoftCallback)
+	mux.HandleFunc("/auth/logout", h.microsoftLogout)
 	mux.HandleFunc("/api/v1/me", h.withAuth(h.me))
 	mux.HandleFunc("/api/v1/analytics", h.withAuth(h.analytics))
 	mux.HandleFunc("/api/v1/tenants", h.withAuth(h.tenants))
@@ -63,6 +66,9 @@ func (h *Handler) swagger(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
+	errOut(w, 410, "password registration disabled; use Microsoft SSO")
+	return
+
 	var in struct{ Email, Name, Password string }
 	if !decode(w, r, &in) {
 		return
@@ -80,6 +86,9 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+	errOut(w, 410, "password login disabled; use Microsoft SSO")
+	return
+
 	var in struct{ Email, Password string }
 	if !decode(w, r, &in) {
 		return
@@ -94,6 +103,9 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) forgot(w http.ResponseWriter, r *http.Request) {
+	errOut(w, 410, "password reset disabled; use Microsoft SSO")
+	return
+
 	var in struct{ Email string }
 	if !decode(w, r, &in) {
 		return
@@ -107,6 +119,9 @@ func (h *Handler) forgot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
+	errOut(w, 410, "password change disabled; use Microsoft SSO")
+	return
+
 	var in struct{ Token, OldPassword, NewPassword string }
 	if !decode(w, r, &in) {
 		return
@@ -367,10 +382,6 @@ func (h *Handler) redirect(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/auth/change-password" && r.Header.Get("Authorization") == "" && r.Header.Get("X-API-Key") == "" {
-			next(w, r)
-			return
-		}
 		if key := r.Header.Get("X-API-Key"); key != "" {
 			u, err := h.S.UserByAPIKey(auth.SHA256Hex(key))
 			if err == nil {
@@ -378,10 +389,14 @@ func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 		}
+		if u, ok := h.userFromSession(r); ok {
+			next(w, r.WithContext(withUser(r.Context(), u)))
+			return
+		}
 		bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		c, err := auth.ParseJWT(h.C.JWTSecret, bearer)
 		if err != nil {
-			errOut(w, 401, "auth required")
+			ssoRequired(w)
 			return
 		}
 		u, err := h.S.UserByID(c.UserID)

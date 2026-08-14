@@ -1,16 +1,16 @@
 const $ = s => document.querySelector(s);
-let token = localStorage.shortqToken || '';
 let currentUser = null;
 let tenantCache = [];
 function msg(x){ $('#msg').textContent = typeof x === 'string' ? x : JSON.stringify(x,null,2); }
-async function api(path,opt={}){ opt.headers = {...(opt.headers||{}),'Content-Type':'application/json'}; if(token) opt.headers.Authorization = 'Bearer '+token; let r = await fetch(path,opt); if(r.status===204) return null; let j = await r.json().catch(()=>({})); if(!r.ok) throw j; return j; }
-function setAuthNav(loggedIn){ $('#loginTab').hidden = loggedIn; $('#registerTab').hidden = loggedIn; $('#forgotTab').hidden = loggedIn; $('#logoutTab').hidden = !loggedIn; }
-function tab(name){ setAuthNav(false); $('#dash').hidden = true; let html = {login:`<h2>Login</h2><form onsubmit="login(event)"><input name="email" type="email" required placeholder="email"><input name="password" type="password" required placeholder="password"><button>Login</button></form>`,register:`<h2>Register customer</h2><form onsubmit="register(event)"><input name="name" required placeholder="name"><input name="email" type="email" required placeholder="email"><input name="password" type="password" required placeholder="password min 8"><button>Register</button></form>`,forgot:`<h2>Forgot password</h2><form onsubmit="forgot(event)"><input name="email" type="email" required placeholder="email"><button>Generate reset</button></form>`}[name]; $('#forms').innerHTML = html; }
+async function api(path,opt={}){ opt.headers = {...(opt.headers||{}),'Content-Type':'application/json'}; opt.credentials = 'same-origin'; let r = await fetch(path,opt); if(r.status===204) return null; let j = await r.json().catch(()=>({})); if(r.status===401 && j.login_url){ location.href = j.login_url; return; } if(!r.ok) throw j; return j; }
+function setAuthNav(loggedIn){ $('#loginTab').hidden = loggedIn; $('#registerTab').hidden = true; $('#forgotTab').hidden = true; $('#logoutTab').hidden = !loggedIn; }
+function tab(){ setAuthNav(false); $('#dash').hidden = true; $('#forms').innerHTML = `<h2>Microsoft SSO</h2><p>Dashboard access uses Electraauto Microsoft tenant SSO.</p><button onclick="login()">Sign in with Microsoft</button>`; }
 function data(e){ return Object.fromEntries(new FormData(e.target).entries()); }
-async function register(e){ e.preventDefault(); try{ msg(await api('/api/v1/auth/register',{method:'POST',body:JSON.stringify(data(e))})); tab('login'); }catch(x){ msg(x); } }
-async function login(e){ e.preventDefault(); try{ let r = await api('/api/v1/auth/login',{method:'POST',body:JSON.stringify(data(e))}); token = r.token; localStorage.shortqToken = token; msg('logged in'); await showDash(); }catch(x){ msg(x); } }
-async function forgot(e){ e.preventDefault(); try{ msg(await api('/api/v1/auth/forgot-password',{method:'POST',body:JSON.stringify(data(e))})); }catch(x){ msg(x); } }
-async function changePass(e){ e.preventDefault(); try{ msg(await api('/api/v1/auth/change-password',{method:'POST',body:JSON.stringify(data(e))})); }catch(x){ msg(x); } }
+function login(){ location.href = '/auth/microsoft/login'; }
+function logout(){ location.href = '/auth/logout'; }
+async function register(e){ e.preventDefault(); login(); }
+async function forgot(e){ e.preventDefault(); login(); }
+async function changePass(e){ e.preventDefault(); msg('Password auth disabled. Use Microsoft SSO.'); }
 async function createLink(e){ e.preventDefault(); try{ await api('/api/v1/links',{method:'POST',body:JSON.stringify(data(e))}); e.target.reset(); await loadLinks(); await loadStats(); }catch(x){ msg(x); } }
 async function loadLinks(){ let xs = await api('/api/v1/links'); $('#links').innerHTML = xs.map(x=>`<div class="row"><div><b>${esc(x.title||x.slug)}</b><br><a href="${x.short_url}" target="_blank">${x.short_url}</a><div class="tiny">${esc(x.target_url)} · ${x.clicks} clicks · user ${x.user_id}</div></div><button onclick="qr('${x.short_url}')">QR</button><button onclick="delLink(${x.id})">Delete</button></div>`).join('') || 'No links'; }
 async function delLink(id){ await api('/api/v1/links/'+id,{method:'DELETE'}); await loadLinks(); await loadStats(); }
@@ -44,9 +44,9 @@ async function loadCustomers(){ if(currentUser.role === 'customer') return; setu
 async function createCustomer(e){ e.preventDefault(); let d = data(e); if(currentUser.role === 'tenant'){ d.role = 'customer'; d.tenant_id = currentUser.tenant_id; } if(d.tenant_id) d.tenant_id = Number(d.tenant_id); else delete d.tenant_id; try{ await api('/api/v1/customers',{method:'POST',body:JSON.stringify(d)}); e.target.reset(); setupCustomerForm(); await loadCustomers(); await loadStats(); }catch(x){ msg(x); } }
 function qr(t){ $('#qrText').value = t; makeQR(); scrollTo(0,0); }
 function makeQR(){ let t = encodeURIComponent($('#qrText').value); $('#qrImg').src = '/api/v1/qr?text='+t+'&_='+Date.now(); }
-function logout(){ token=''; currentUser=null; delete localStorage.shortqToken; $('#dash').hidden=true; $('#tenantPanel').hidden=true; $('#customerPanel').hidden=true; $('#domainPanel').hidden=true; tab('login'); }
 async function showDash(){
   currentUser = await api('/api/v1/me');
+  if(!currentUser) return;
   $('#forms').innerHTML='';
   $('#dash').hidden=false;
   setAuthNav(true);
@@ -59,13 +59,8 @@ async function showDash(){
   if(failed) msg(failed.reason);
 }
 async function restoreSession(){
-  if(!token){ setAuthNav(false); tab('login'); return; }
-  try{
-    await showDash();
-  }catch(e){
-    if(e && (e.error === 'auth required' || e.error === 'expired token' || e.error === 'invalid token')) logout();
-    else { tab('login'); msg(e); }
-  }
+  try{ await showDash(); }
+  catch(e){ tab(); if(e && e.error && e.error !== 'sso required') msg(e); }
 }
 function esc(s){ return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 restoreSession();
