@@ -323,14 +323,32 @@ func (h *Handler) links(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) linkByID(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "DELETE" {
-		w.WriteHeader(405)
-		return
-	}
 	u, _ := userFrom(r.Context())
 	id, _ := strconv.ParseInt(strings.TrimPrefix(r.URL.Path, "/api/v1/links/"), 10, 64)
-	_ = h.S.DeleteLink(u, id)
-	w.WriteHeader(204)
+	switch r.Method {
+	case "PUT", "PATCH":
+		var in struct {
+			URL, Slug, Title string `json:",omitempty"`
+		}
+		if !decode(w, r, &in) {
+			return
+		}
+		l, err := h.S.UpdateLink(u, id, in.Slug, in.URL, in.Title)
+		if err != nil {
+			errOut(w, 404, "link not found")
+			return
+		}
+		l.ShortURL = h.shortURL(l)
+		jsonOut(w, 200, l)
+	case "DELETE":
+		if err := h.S.DeleteLink(u, id); err != nil {
+			errOut(w, 404, "link not found")
+			return
+		}
+		w.WriteHeader(204)
+	default:
+		w.WriteHeader(405)
+	}
 }
 func (h *Handler) qr(w http.ResponseWriter, r *http.Request) {
 	text := r.URL.Query().Get("text")

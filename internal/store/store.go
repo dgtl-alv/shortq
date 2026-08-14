@@ -187,7 +187,7 @@ func (s *Store) CreateLink(u models.User, slug, url, title string) (models.Link,
 func (s *Store) ListLinks(u models.User) ([]models.Link, error) {
 	q := `SELECT id,user_id,tenant_id,slug,target_url,title,clicks,created_at FROM links`
 	args := []any{}
-	if u.Role == "tenant" {
+	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
 		q += ` WHERE tenant_id=?`
 		args = append(args, *u.TenantID)
 	} else if u.Role == "customer" {
@@ -216,18 +216,59 @@ func (s *Store) LinkBySlug(slug string) (models.Link, error) {
 	return scanLink(row)
 }
 
-func (s *Store) DeleteLink(u models.User, id int64) error {
-	q := `DELETE FROM links WHERE id=?`
-	args := []any{id}
-	if u.Role == "tenant" {
+func (s *Store) UpdateLink(u models.User, id int64, slug, targetURL, title string) (models.Link, error) {
+	if slug == "" {
+		return models.Link{}, errors.New("slug required")
+	}
+	if !slugRe.MatchString(slug) {
+		return models.Link{}, errors.New("slug must be 3-80 letters, numbers, _ or -")
+	}
+	q := `UPDATE links SET slug=?, target_url=?, title=? WHERE id=?`
+	args := []any{slug, targetURL, title, id}
+	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
 		q += ` AND tenant_id=?`
 		args = append(args, *u.TenantID)
 	} else if u.Role == "customer" {
 		q += ` AND user_id=?`
 		args = append(args, u.ID)
 	}
-	_, err := s.DB.Exec(q, args...)
-	return err
+	if _, err := s.DB.Exec(q, args...); err != nil {
+		return models.Link{}, err
+	}
+	return s.LinkByID(u, id)
+}
+
+func (s *Store) LinkByID(u models.User, id int64) (models.Link, error) {
+	q := `SELECT id,user_id,tenant_id,slug,target_url,title,clicks,created_at FROM links WHERE id=?`
+	args := []any{id}
+	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
+		q += ` AND tenant_id=?`
+		args = append(args, *u.TenantID)
+	} else if u.Role == "customer" {
+		q += ` AND user_id=?`
+		args = append(args, u.ID)
+	}
+	return scanLink(s.DB.QueryRow(q, args...))
+}
+
+func (s *Store) DeleteLink(u models.User, id int64) error {
+	q := `DELETE FROM links WHERE id=?`
+	args := []any{id}
+	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
+		q += ` AND tenant_id=?`
+		args = append(args, *u.TenantID)
+	} else if u.Role == "customer" {
+		q += ` AND user_id=?`
+		args = append(args, u.ID)
+	}
+	res, err := s.DB.Exec(q, args...)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Store) TrackClick(linkID int64, ip, ua, ref string) {
@@ -239,7 +280,7 @@ func (s *Store) Analytics(u models.User) (models.Analytics, error) {
 	var a models.Analytics
 	where := ""
 	args := []any{}
-	if u.Role == "tenant" {
+	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
 		where = " WHERE tenant_id=?"
 		args = append(args, *u.TenantID)
 	} else if u.Role == "customer" {
@@ -251,7 +292,7 @@ func (s *Store) Analytics(u models.User) (models.Analytics, error) {
 	}
 	clickWhere := ""
 	clickArgs := []any{}
-	if u.Role == "tenant" {
+	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
 		clickWhere = " AND l.tenant_id=?"
 		clickArgs = append(clickArgs, *u.TenantID)
 	} else if u.Role == "customer" {

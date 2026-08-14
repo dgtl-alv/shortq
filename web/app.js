@@ -67,9 +67,25 @@ async function loadLinks() {
         <a href="${esc(x.short_url)}" target="_blank" rel="noopener">${esc(x.short_url)}</a>
         <div class="tiny">${esc(x.target_url)} · ${x.clicks} clicks</div>
       </div>
+      <button class="secondary" onclick="editLink('${encodeURIComponent(JSON.stringify(x))}')">Edit</button>
       <button class="secondary" onclick="qr('${esc(x.short_url)}')">QR</button>
       <button class="danger" onclick="delLink(${x.id})">Delete</button>
     </div>`).join('') || '<div class="empty">No links yet. Create first link above.</div>';
+}
+
+async function editLink(encodedLink) {
+  const link = JSON.parse(decodeURIComponent(encodedLink));
+  const slug = prompt('Slug', link.slug);
+  if (slug === null) return;
+  const target_url = prompt('Destination URL', link.target_url);
+  if (target_url === null) return;
+  const title = prompt('Title', link.title || '');
+  if (title === null) return;
+  try {
+    await api('/api/v1/links/' + link.id, { method: 'PUT', body: JSON.stringify({ slug, url: target_url, title }) });
+    showMsg('Link updated.', 'ok');
+    await Promise.all([loadLinks(), loadStats()]);
+  } catch (x) { showMsg(x); }
 }
 
 async function delLink(id) {
