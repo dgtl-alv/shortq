@@ -7,124 +7,118 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main>
-    <section id="app" class="panel app-shell dashboard-shell">
-      <div class="panel-top">
-        <div>
-          <p class="eyebrow">ShortQ Control Room</p>
-          <h1>Dashboard</h1>
-          <p class="lede">Create, copy, track, and manage ALVA short links.</p>
-        </div>
-        <nav>
-          <button id="loginTab" onclick="login()">Login with Microsoft</button>
-          <button id="registerTab" onclick="login()" hidden>Register</button>
-          <button id="forgotTab" onclick="login()" hidden>Forgot</button>
-          <button id="logoutTab" class="danger" onclick="logout()" hidden>Logout</button>
-        </nav>
+  <div id="app" class="dashboard-shell hidden">
+    <nav class="topbar">
+      <div>
+        <strong>ShortQ Dashboard</strong>
+        <small id="meText">Microsoft SSO protected</small>
       </div>
+      <div class="nav-actions">
+        <span class="badge">s.alvaauto.com</span>
+        <button id="logoutBtn" class="ghost">Logout</button>
+      </div>
+    </nav>
 
-      <div id="forms" class="auth-box"></div>
+    <main class="dashboard-main">
+      <section class="panel create-panel">
+        <div class="section-title">
+          <p class="eyebrow">Dashboard</p>
+          <h1>Create shortened link</h1>
+          <p class="muted">Paste long URL, choose optional slug, click create. Public link uses <code>/r/&lt;slug&gt;</code>.</p>
+        </div>
+        <form id="linkForm" class="form-grid">
+          <label>Long URL
+            <input name="url" type="url" placeholder="https://example.com/path" required>
+          </label>
+          <label>Custom slug (optional)
+            <input name="slug" placeholder="promo-august">
+          </label>
+          <label>Title (optional)
+            <input name="title" placeholder="Campaign link">
+          </label>
+          <button type="submit">Create shortened link</button>
+        </form>
+        <div id="createResult" class="result hidden"></div>
+      </section>
 
-      <div id="dash" hidden>
-        <div id="me" class="identity-pill"></div>
-        <div id="stats" class="stats"></div>
-
-        <section class="module feature-module">
-          <div class="module-head">
-            <h3>Create shortened link</h3>
-            <span>Short URL builder</span>
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Links</p>
+            <h2>Manage shortened links</h2>
           </div>
-          <form class="form-grid links-form" onsubmit="createLink(event)">
-            <input name="url" placeholder="Paste long URL, e.g. https://alvaauto.com/..." required>
-            <input name="slug" placeholder="Custom slug optional">
-            <input name="title" placeholder="Internal title optional">
-            <button>Create short link</button>
+          <button id="refreshLinks" class="ghost">Refresh</button>
+        </div>
+        <div id="linksList" class="list empty">Loading links...</div>
+      </section>
+
+      <section class="grid two">
+        <div class="panel">
+          <p class="eyebrow">QR</p>
+          <h2>Generate QR code</h2>
+          <form id="qrForm" class="form-grid">
+            <label>Text or URL
+              <input name="text" id="qrText" placeholder="https://s.alvaauto.com/r/demo" required>
+            </label>
+            <button type="submit">Generate QR</button>
           </form>
-          <div class="tiny">Output uses public redirect path <b>/r/&lt;slug&gt;</b>. Short links remain public.</div>
-          <div id="links" class="list"></div>
-        </section>
-
-        <div class="grid two">
-          <section class="module">
-            <div class="module-head">
-              <h3>QR Code</h3>
-              <span>Instant PNG</span>
-            </div>
-            <input id="qrText" value="https://s.alvaauto.com" aria-label="QR text">
-            <button onclick="makeQR()">Generate QR</button>
-            <img id="qrImg" alt="QR preview">
-          </section>
-
-          <section class="module">
-            <div class="module-head">
-              <h3>API Keys</h3>
-              <span>Shown once</span>
-            </div>
-            <form class="form-grid" onsubmit="createKey(event)">
-              <input name="name" placeholder="key name" required>
-              <button>Create key</button>
-            </form>
-            <pre id="newKey"></pre>
-            <div id="keys" class="list"></div>
-          </section>
+          <div id="qrResult" class="qrbox hidden"></div>
         </div>
 
-        <div class="grid two admin-grid">
-          <section id="tenantPanel" class="module" hidden>
-            <div class="module-head">
-              <h3>Tenants</h3>
-              <span>Superadmin</span>
-            </div>
-            <form class="form-grid" onsubmit="createTenant(event)">
-              <input name="name" placeholder="tenant name" required>
-              <input name="slug" placeholder="tenant slug" required>
-              <button>Create tenant</button>
-            </form>
-            <div id="tenants" class="list"></div>
-          </section>
-
-          <section id="domainPanel" class="module" hidden>
-            <div class="module-head">
-              <h3>Custom Domains</h3>
-              <span>Tenant DNS</span>
-            </div>
-            <form class="form-grid" onsubmit="createDomain(event)">
-              <input name="domain" placeholder="go.customer.com" required>
-              <select id="domainTenant" name="tenant_id" required>
-                <option value="">select tenant</option>
-              </select>
-              <button>Add domain</button>
-            </form>
-            <div class="tiny">Point DNS with CNAME to this ShortQ host, then click Verify. TXT fallback also shown per domain.</div>
-            <div id="domains" class="list"></div>
-          </section>
-
-          <section id="customerPanel" class="module" hidden>
-            <div class="module-head">
-              <h3>Tenant / Customer Users</h3>
-              <span>Scoped access</span>
-            </div>
-            <form class="form-grid" onsubmit="createCustomer(event)">
-              <input name="name" placeholder="name" required>
-              <input name="email" type="email" placeholder="email" required>
-              <input name="password" type="password" placeholder="password min 8" required>
-              <select id="customerRole" name="role">
-                <option value="customer">customer</option>
-                <option value="tenant">tenant</option>
-              </select>
-              <select id="customerTenant" name="tenant_id" required>
-                <option value="">select tenant</option>
-              </select>
-              <button>Create user</button>
-            </form>
-            <div id="customers" class="list"></div>
-          </section>
+        <div class="panel">
+          <p class="eyebrow">API</p>
+          <h2>API key</h2>
+          <p class="muted">Create API key for automation clients.</p>
+          <button id="apiKeyBtn">Generate API key</button>
+          <pre id="apiKeyResult" class="result hidden"></pre>
         </div>
-      </div>
+      </section>
 
-      <pre id="msg"></pre>
-    </section>
-  </main>
-  <script src="/app.js?v=20260814-dashboard"></script>
+      <section id="adminSection" class="grid three hidden">
+        <div class="panel">
+          <p class="eyebrow">Admin</p>
+          <h2>Tenants</h2>
+          <form id="tenantForm" class="form-grid">
+            <label>Name<input name="name" placeholder="Marketing"></label>
+            <label>Slug<input name="slug" placeholder="marketing"></label>
+            <button type="submit">Create tenant</button>
+          </form>
+          <div id="tenantResult" class="result hidden"></div>
+          <div id="tenantsList" class="list small"></div>
+        </div>
+
+        <div class="panel">
+          <p class="eyebrow">Admin</p>
+          <h2>Domains</h2>
+          <form id="domainForm" class="form-grid">
+            <label>Tenant ID<input name="tenant_id" type="number" placeholder="1"></label>
+            <label>Domain<input name="domain" placeholder="go.example.com"></label>
+            <button type="submit">Add domain</button>
+          </form>
+          <div id="domainResult" class="result hidden"></div>
+        </div>
+
+        <div class="panel">
+          <p class="eyebrow">Admin</p>
+          <h2>Customers</h2>
+          <form id="customerForm" class="form-grid">
+            <label>Tenant ID<input name="tenant_id" type="number" placeholder="1"></label>
+            <label>Name<input name="name" placeholder="Customer name"></label>
+            <label>Email<input name="email" type="email" placeholder="customer@example.com"></label>
+            <button type="submit">Create customer</button>
+          </form>
+          <div id="customerResult" class="result hidden"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="login" class="login-card hidden">
+    <h1>ShortQ Dashboard</h1>
+    <p>Microsoft SSO required.</p>
+    <a class="button" href="/auth/microsoft/login">Login with Microsoft</a>
+  </div>
+
+  <script src="/app.js?v=20260814-dashboard2"></script>
 </body>
 </html>
