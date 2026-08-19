@@ -24,12 +24,15 @@ Change both before production.
 - Microsoft Entra SSO for dashboard access; password auth disabled in production setup
 - URL shortener with globally unique custom slug
 - QR PNG generator for URL or arbitrary text
-- API token/key management
-- Department model backed by legacy internal `tenant` tables/API names
+- API token/key management with account- or user-scoped permissions
+- Server-enforced Admin/User dashboard switch for superadmins and department admins
+- Single ALVA department backed by legacy internal `tenant` tables/API names
 - Role model: `superadmin`, `tenant` (department admin), `customer` (department user)
-- Superadmin manages departments and users
+- Superadmin manages ALVA users and domains; additional departments are disabled
 - Department admins manage users under same department
 - Department users can create, edit, delete, list, and view analytics for every link in their own department
+- Department users must have deletion access activated by a superadmin before deleting links or domains or revoking API keys; superadmins always retain deletion access.
+- Administrative writes and denied deletion attempts are retained in the superadmin audit log for 365 days.
 - All departments use the same shortened domain, for example `https://s.alvaauto.com/<slug>`; `/r/<slug>` remains backward compatible
 - Slugs are globally unique across all departments because shared domain has no department path segment
 - Role-scoped analytics at `/api/v1/analytics`
@@ -38,7 +41,7 @@ Change both before production.
 
 ## Auth
 
-Dashboard uses Microsoft Entra SSO sessions. Public API can use either SSO/JWT session auth or API key:
+Dashboard uses Microsoft Entra SSO sessions. Admin accounts start in Admin mode after each fresh login and can switch to a server-enforced User mode from the dashboard. Public API can use either SSO/JWT session auth or API key:
 
 ```bash
 curl -H 'X-API-Key: ***' http://localhost:8080/api/v1/links

@@ -1,0 +1,14 @@
+services:
+  app:
+    container_name: shortq-app
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:18080:8080"
+  db:
+    container_name: shortq-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: shortq
+      MYSQL_USER: shortq
+      MYSQL_PASSWORD: ${SHORTQ_MYSQL_PASSWORD:-shortqpass}
+      MYSQL_ROOT_PASSWORD: ${SHORTQ_MYSQL_ROOT_PASSWORD:-rootpass}

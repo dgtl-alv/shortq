@@ -10,6 +10,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func HashPassword(password string) ([]byte, error) {
@@ -38,9 +40,42 @@ func CheckPassword(encoded []byte, password string) bool {
 	return hmac.Equal(sum[:], want)
 }
 
+func HashSecret(secret string) ([]byte, error) {
+	return bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
+}
+
+func CheckSecret(encoded []byte, secret string) bool {
+	return bcrypt.CompareHashAndPassword(encoded, []byte(secret)) == nil
+}
+
+type LinkAccessClaims struct {
+	LinkID int64 `json:"lid"`
+	Exp    int64 `json:"exp"`
+}
+
+func SignLinkAccess(secret string, linkID int64, expires time.Time) (string, error) {
+	bodyBytes, _ := json.Marshal(LinkAccessClaims{LinkID: linkID, Exp: expires.Unix()})
+	body := base64.RawURLEncoding.EncodeToString(bodyBytes)
+	return body + "." + sign(secret, body), nil
+}
+
+func CheckLinkAccess(secret, token string, linkID int64) bool {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 || !hmac.Equal([]byte(sign(secret, parts[0])), []byte(parts[1])) {
+		return false
+	}
+	body, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return false
+	}
+	var c LinkAccessClaims
+	return json.Unmarshal(body, &c) == nil && c.LinkID == linkID && time.Now().Unix() <= c.Exp
+}
+
 type Claims struct {
 	UserID int64  `json:"uid"`
 	Email  string `json:"email"`
+	Mode   string `json:"mode,omitempty"`
 	Exp    int64  `json:"exp"`
 }
 

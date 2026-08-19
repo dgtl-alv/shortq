@@ -2,9 +2,9 @@
 
 ShortQ punya 3 role:
 
-- `superadmin`: kelola tenant, tenant user, customer, semua link, analytics global.
+- `superadmin`: kelola user dan domain ALVA, semua link, analytics global.
 - `tenant`: kelola customer dalam tenant sendiri, lihat link dan analytics tenant.
-- `customer`: kelola link, QR, API key milik sendiri.
+- `customer`: kelola link, QR, dan API key dalam department ALVA.
 
 ## Akses Aplikasi
 
@@ -19,7 +19,18 @@ Default superadmin saat pertama run:
 
 Ganti password default sebelum production.
 
+## Mode Admin dan User
+
+Akun superadmin dan admin department memiliki tombol Acting as untuk berpindah mode. Login baru selalu dimulai dalam mode Admin; refresh mempertahankan mode saat ini.
+
+- Mode Admin menampilkan link dan analytics sesuai cakupan admin, serta panel department, domain, dan user.
+- Mode User menyembunyikan panel administrasi dan server membatasi semua API dashboard ke role user efektif.
+- API key yang dibuat dalam mode User bersifat user-scoped dan tidak dapat memperoleh izin admin. API key lama mempertahankan cakupan account.
+- Logout lalu login kembali mengembalikan akun admin ke mode Admin.
+
 ## Superadmin Guide
+
+Only superadmins can activate or deactivate deletion access from the Users panel and view the Audit log. The audit log records sanitized administrative changes and denied deletion attempts for 365 days. Passwords, tokens, and raw API keys are never included.
 
 ### Login
 
@@ -27,14 +38,9 @@ Ganti password default sebelum production.
 2. Masukkan email dan password superadmin.
 3. Setelah login, dashboard menampilkan role `superadmin`.
 
-### Membuat Tenant
+### Department ALVA
 
-1. Di bagian `Tenants`, isi:
-   - `tenant name`: nama tenant, contoh `Kanezza Marketing`.
-   - `tenant slug`: slug unik, contoh `kanezza-marketing`.
-2. Klik `Create tenant`.
-3. Tenant baru muncul di daftar tenant.
-4. Catat `id` tenant. ID ini dipakai saat membuat tenant user atau customer.
+ShortQ memakai satu department tetap bernama ALVA. Semua user SSO baru otomatis dibuat sebagai user ALVA, dan department tambahan tidak dapat dibuat.
 
 ### Membuat User Tenant
 
@@ -148,6 +154,8 @@ Ada 2 cara:
 
 1. Klik tombol `QR` di link yang sudah dibuat.
 2. Atau isi text/URL di kartu `Try QR`, lalu klik `Generate`.
+
+QR dihasilkan sebagai PNG resolusi tinggi dengan logo resmi ALVA dan error correction tinggi agar tetap mudah dipindai.
 
 QR endpoint publik:
 

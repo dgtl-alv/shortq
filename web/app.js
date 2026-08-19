@@ -1,6 +1,7 @@
 const $ = s => document.querySelector(s);
 let currentUser = null;
 let tenantCache = [];
+let linkCache = [];
 
 function showMsg(x, type = 'error') {
   const el = $('#msg');
@@ -47,11 +48,43 @@ function showApp() {
   $('#dash').hidden = false;
 }
 
+function confirmAction({ title, message, confirmLabel = 'Confirm', danger = false }) {
+  const dialog = $('#confirmDialog');
+  $('#confirmTitle').textContent = title;
+  $('#confirmMessage').textContent = message;
+  const confirmButton = $('#confirmButton');
+  confirmButton.textContent = confirmLabel;
+  confirmButton.classList.toggle('danger', danger);
+  return new Promise(resolve => {
+    const onClose = () => resolve(dialog.returnValue === 'confirm');
+    dialog.addEventListener('close', onClose, { once: true });
+    dialog.showModal();
+  });
+}
+
+function renderDashboardMode() {
+  const canSwitch = Boolean(currentUser && currentUser.can_switch_mode);
+  $('#modeSwitcher').hidden = !canSwitch;
+  $('#adminSection').hidden = !currentUser || currentUser.dashboard_mode !== 'admin';
+  $('#adminModeButton').classList.toggle('active', currentUser && currentUser.dashboard_mode === 'admin');
+  $('#userModeButton').classList.toggle('active', currentUser && currentUser.dashboard_mode === 'user');
+}
+
+async function setDashboardMode(mode) {
+  if (!currentUser || currentUser.dashboard_mode === mode) return;
+  showMsg('Switching dashboard mode...', 'ok');
+  try {
+    currentUser = await api('/api/v1/session/mode', { method: 'POST', body: JSON.stringify({ mode }) });
+    await renderDashboard();
+    showMsg('Now acting as ' + mode + '.', 'ok');
+  } catch (x) { showMsg(x); }
+}
+
 async function createLink(e) {
   e.preventDefault();
   showMsg('Creating link...', 'ok');
   try {
-    const link = await api('/api/v1/links', { method: 'POST', body: JSON.stringify(data(e)) });
+    const link = await api('/api/v1/links', { method: 'POST', body: JSON.stringify(linkPayloadFromForm(e.target, true)) });
     e.target.reset();
     showMsg(`Created: ${link.short_url}`, 'ok');
     await Promise.all([loadLinks(), loadStats()]);
@@ -59,7 +92,9 @@ async function createLink(e) {
 }
 
 async function loadLinks() {
-  const xs = await api('/api/v1/links') || [];
+  const page = await api('/api/v1/links/page?limit=100') || { items: [] };
+  const xs = page.items || [];
+  linkCache = xs;
   $('#links').innerHTML = xs.map(x => `
     <div class="row">
       <div>
@@ -67,32 +102,71 @@ async function loadLinks() {
         <a href="${esc(x.short_url)}" target="_blank" rel="noopener">${esc(x.short_url)}</a>
         <div class="tiny">${esc(x.target_url)} · ${x.clicks} clicks</div>
       </div>
-      <button class="secondary" onclick="editLink('${encodeURIComponent(JSON.stringify(x))}')">Edit</button>
-      <button class="secondary" onclick="qr('${esc(x.short_url)}')">QR</button>
-      <button class="danger" onclick="delLink(${x.id})">Delete</button>
+      <button class="secondary" onclick="editLink(${x.id})">Edit</button>
+      <button class="secondary" onclick="qrForLink(${x.id})">QR</button>
+      ${currentUser && currentUser.can_delete ? `<button class="danger" onclick="delLink(${x.id})">Delete</button>` : '<button class="danger" disabled title="Deletion access must be activated by a superadmin">Delete locked</button>'}
     </div>`).join('') || '<div class="empty">No links yet. Create first link above.</div>';
 }
 
-async function editLink(encodedLink) {
-  const link = JSON.parse(decodeURIComponent(encodedLink));
-  const slug = prompt('Slug', link.slug);
-  if (slug === null) return;
-  const target_url = prompt('Destination URL', link.target_url);
-  if (target_url === null) return;
-  const title = prompt('Title', link.title || '');
-  if (title === null) return;
+function linkPayloadFromForm(form, creating = false) {
+  const raw = data({ target: form });
+  const payload = { url: raw.url || '', title: raw.title || '', redirect_code: Number(raw.redirect_code || 302), forward_query: form.elements.forward_query ? form.elements.forward_query.checked : true };
+  if (creating && raw.slug) payload.slug = raw.slug;
+  ['expired_url', 'ios_url', 'android_url', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach(key => { if (key in raw) payload[key] = raw[key] || ''; });
+  if (raw.expires_at) payload.expires_at = new Date(raw.expires_at).toISOString(); else if (!creating) payload.expires_at = '';
+  if (raw.max_clicks) payload.max_clicks = Number(raw.max_clicks); else if (!creating) payload.clear_max_clicks = true;
+  payload.tags = raw.tags ? raw.tags.split(';').map(x => x.trim()).filter(Boolean) : [];
+  try { payload.geo_targets = raw.geo_targets ? JSON.parse(raw.geo_targets) : []; } catch { throw { error: 'Country routes must be valid JSON.' }; }
+  if (raw.password) payload.password = raw.password;
+  if (form.elements.clear_password && form.elements.clear_password.checked) payload.clear_password = true;
+  return payload;
+}
+
+function editLink(id) {
+  const link = linkCache.find(item => item.id === id);
+  if (!link) return;
+  const form = $('#editLinkForm');
+  form.reset();
+  $('#editSlug').textContent = '/' + link.slug;
+  const values = { id: link.id, url: link.target_url, title: link.title, redirect_code: link.redirect_code || 302, expired_url: link.expired_url, ios_url: link.ios_url, android_url: link.android_url, geo_targets: JSON.stringify(link.geo_targets || []), tags: (link.tags || []).join('; '), utm_source: link.utm_source, utm_medium: link.utm_medium, utm_campaign: link.utm_campaign };
+  Object.entries(values).forEach(([key, value]) => { if (form.elements[key]) form.elements[key].value = value || ''; });
+  if (link.expires_at) form.elements.expires_at.value = new Date(link.expires_at).toISOString().slice(0, 16);
+  if (link.max_clicks) form.elements.max_clicks.value = link.max_clicks;
+  form.elements.forward_query.checked = Boolean(link.forward_query);
+  $('#linkEditor').showModal();
+}
+
+async function saveLink(e) {
+  e.preventDefault();
+  const form = e.target;
   try {
-    await api('/api/v1/links/' + link.id, { method: 'PUT', body: JSON.stringify({ slug, url: target_url, title }) });
-    showMsg('Link updated.', 'ok');
+    const result = await api('/api/v1/links/' + form.elements.id.value, { method: 'PATCH', body: JSON.stringify(linkPayloadFromForm(form, false)) });
+    $('#linkEditor').close();
+    showMsg(`Updated /${result.slug}; the slug was not changed.`, 'ok');
     await Promise.all([loadLinks(), loadStats()]);
   } catch (x) { showMsg(x); }
 }
 
+function downloadLinks() { location.href = '/api/v1/links/export.csv'; }
+async function importLinks(input) {
+  if (!input.files || !input.files[0]) return;
+  try {
+    const form = new FormData(); form.append('file', input.files[0]);
+    const response = await fetch('/api/v1/links/import', { method: 'POST', body: form, credentials: 'same-origin' });
+    const result = await response.json(); if (!response.ok) throw result;
+    showMsg(`Imported ${result.imported} links.`, result.errors && Object.keys(result.errors).length ? 'error' : 'ok');
+    await Promise.all([loadLinks(), loadStats()]);
+  } catch (x) { showMsg(x); } finally { input.value = ''; }
+}
+
 async function delLink(id) {
-  if (!confirm('Delete this short link?')) return;
-  await api('/api/v1/links/' + id, { method: 'DELETE' });
-  showMsg('Link deleted.', 'ok');
-  await Promise.all([loadLinks(), loadStats()]);
+  const link = linkCache.find(item => item.id === id);
+  if (!await confirmAction({ title: 'Delete short link?', message: `/${link ? link.slug : 'this link'} will stop redirecting immediately. This action cannot be undone.`, confirmLabel: 'Delete link', danger: true })) return;
+  try {
+    await api('/api/v1/links/' + id, { method: 'DELETE' });
+    showMsg('Link deleted.', 'ok');
+    await Promise.all([loadLinks(), loadStats()]);
+  } catch (x) { showMsg(x); }
 }
 
 async function createKey(e) {
@@ -109,16 +183,18 @@ async function loadKeys() {
   const xs = await api('/api/v1/api-keys') || [];
   $('#keys').innerHTML = xs.map(k => `
     <div class="row one-action">
-      <div><b>${esc(k.name)}</b><div class="tiny">${esc(k.prefix)} · ${new Date(k.created_at).toLocaleString()}</div></div>
-      <button class="danger" onclick="delKey(${k.id})">Revoke</button>
+      <div><b>${esc(k.name)}</b><div class="tiny">${esc(k.prefix)} · ${esc(k.scope)} scope · ${new Date(k.created_at).toLocaleString()}</div></div>
+      ${currentUser && currentUser.can_delete ? `<button class="danger" onclick="delKey(${k.id})">Revoke</button>` : '<button class="danger" disabled title="Deletion access required">Revoke locked</button>'}
     </div>`).join('') || '<div class="empty">No API keys.</div>';
 }
 
 async function delKey(id) {
-  if (!confirm('Revoke this API key?')) return;
-  await api('/api/v1/api-keys/' + id, { method: 'DELETE' });
-  showMsg('API key revoked.', 'ok');
-  await loadKeys();
+  if (!await confirmAction({ title: 'Revoke API key?', message: 'Any integration using this key will lose access immediately. This action cannot be undone.', confirmLabel: 'Revoke key', danger: true })) return;
+  try {
+    await api('/api/v1/api-keys/' + id, { method: 'DELETE' });
+    showMsg('API key revoked.', 'ok');
+    await loadKeys();
+  } catch (x) { showMsg(x); }
 }
 
 async function loadStats() {
@@ -174,7 +250,7 @@ async function loadDomains() {
     <div class="row">
       <div><b>${esc(d.domain)}</b><div class="tiny">${esc(d.status)} · department ${d.tenant_id}<br>TXT _shortq.${esc(d.domain)} = shortq-verify=${esc(d.verification_token)}</div></div>
       <button class="secondary" onclick="verifyDomain(${d.id})">Verify</button>
-      <button class="danger" onclick="delDomain(${d.id})">Delete</button>
+      ${currentUser && currentUser.can_delete ? `<button class="danger" onclick="delDomain(${d.id})">Delete</button>` : '<button class="danger" disabled title="Deletion access required">Delete locked</button>'}
     </div>`).join('') || '<div class="empty">No custom domains.</div>';
 }
 
@@ -195,10 +271,12 @@ async function verifyDomain(id) {
   catch (x) { showMsg(x); }
 }
 async function delDomain(id) {
-  if (!confirm('Delete this domain?')) return;
-  await api('/api/v1/domains/' + id, { method: 'DELETE' });
-  showMsg('Domain deleted.', 'ok');
-  await loadDomains();
+  if (!await confirmAction({ title: 'Delete custom domain?', message: 'Short links using this domain may stop working. This action cannot be undone.', confirmLabel: 'Delete domain', danger: true })) return;
+  try {
+    await api('/api/v1/domains/' + id, { method: 'DELETE' });
+    showMsg('Domain deleted.', 'ok');
+    await loadDomains();
+  } catch (x) { showMsg(x); }
 }
 
 async function loadCustomers() {
@@ -206,7 +284,19 @@ async function loadCustomers() {
   setupCustomerForm();
   const xs = await api('/api/v1/customers') || [];
   $('#customerPanel').hidden = false;
-  $('#customers').innerHTML = xs.map(u => `<div class="row no-actions"><div><b>${esc(u.name)}</b><div class="tiny">${esc(u.email)} · ${esc(roleLabel(u.role))} · department ${u.tenant_id || '-'}</div></div></div>`).join('') || '<div class="empty">No users.</div>';
+  $('#customers').innerHTML = xs.map(u => `<div class="row"><div><b>${esc(u.name)}</b><div class="tiny">${esc(u.email)} · ${esc(roleLabel(u.role))} · department ${u.tenant_id || '-'} · deletion ${u.role === 'superadmin' ? 'always allowed' : (u.deletion_access ? 'enabled' : 'locked')}</div></div>${currentUser.role === 'superadmin' && u.role !== 'superadmin' ? `<button class="${u.deletion_access ? 'danger' : 'secondary'}" onclick="setDeletionAccess(${u.id}, ${!u.deletion_access})">${u.deletion_access ? 'Disable deletion' : 'Enable deletion'}</button>` : ''}</div>`).join('') || '<div class="empty">No users.</div>';
+}
+async function setDeletionAccess(id, enabled) {
+  if (!await confirmAction({ title: `${enabled ? 'Enable' : 'Disable'} deletion access?`, message: enabled ? 'This user will be able to delete links, domains, and API keys.' : 'This user will immediately lose deletion access.', confirmLabel: enabled ? 'Enable access' : 'Disable access', danger: enabled })) return;
+  try { await api(`/api/v1/customers/${id}/deletion-access`, { method: 'PATCH', body: JSON.stringify({ enabled }) }); showMsg('Deletion access updated.', 'ok'); await Promise.all([loadCustomers(), loadAuditEvents()]); } catch (x) { showMsg(x); }
+}
+
+async function loadAuditEvents() {
+  if (!currentUser || currentUser.role !== 'superadmin') return;
+  $('#auditPanel').hidden = false;
+  const query = new URLSearchParams(Object.fromEntries(new FormData($('#auditFilters')).entries())); query.set('limit', '100');
+  const page = await api('/api/v1/audit-events?' + query.toString()) || { items: [] };
+  $('#auditEvents').innerHTML = (page.items || []).map(e => `<div class="row no-actions"><div><b>${esc(e.action)} · ${esc(e.outcome)}</b><div class="tiny">${new Date(e.created_at).toLocaleString()} · ${esc(e.actor_email)} via ${esc(e.auth_type)} · ${esc(e.target_type)} ${esc(e.target_id)} · ${esc(e.ip_address || '-')}</div></div></div>`).join('') || '<div class="empty">No matching audit events.</div>';
 }
 async function createCustomer(e) {
   e.preventDefault();
@@ -222,28 +312,55 @@ async function createCustomer(e) {
   } catch (x) { showMsg(x); }
 }
 
-function qr(t) {
-  $('#qrText').value = t;
+function qrForLink(id) {
+  const link = linkCache.find(item => item.id === id);
+  if (!link) { showMsg('The selected link is no longer available.'); return; }
+  $('#qrText').value = link.short_url;
   makeQR();
   $('#qrText').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 function makeQR() {
   const t = ($('#qrText').value || '').trim();
   if (!t) { showMsg('Enter text or URL for QR.'); return; }
-  $('#qrImg').src = '/api/v1/qr?text=' + encodeURIComponent(t) + '&_=' + Date.now();
+  const format = $('#qrFormat').value;
+  if (format === 'pdf') { showMsg('PDF is ready to download.', 'ok'); return; }
+  $('#qrImg').src = qrURL() + '&_=' + Date.now();
+}
+function qrURL() {
+  return '/api/v1/qr?' + new URLSearchParams({ text: ($('#qrText').value || '').trim(), format: $('#qrFormat').value, size: $('#qrSize').value, foreground: $('#qrForeground').value, background: $('#qrBackground').value }).toString();
+}
+function downloadQR() {
+  if (!($('#qrText').value || '').trim()) { showMsg('Enter text or URL for QR.'); return; }
+  const link = document.createElement('a'); link.href = qrURL(); link.download = 'shortq-qr.' + $('#qrFormat').value; link.click();
+}
+
+async function loadClicks() {
+  const [page, breakdown] = await Promise.all([api('/api/v1/clicks?limit=50'), api('/api/v1/analytics/breakdown?group_by=country')]);
+  $('#breakdown').innerHTML = (breakdown || []).slice(0, 6).map(x => `<div><b>${x.clicks}</b><span>${esc(x.key || 'unknown')}</span></div>`).join('');
+  $('#clicks').innerHTML = (page.items || []).map(x => `<div class="row no-actions"><div><b>/${esc(x.slug)}</b><div class="tiny">${new Date(x.created_at).toLocaleString()} · ${esc(x.country_code || 'unknown')} · ${esc(x.device)} · ${esc(x.browser)} · ${esc(x.route_type)} → ${x.status_code}</div></div></div>`).join('') || '<div class="empty">No click events yet.</div>';
+}
+
+async function renderDashboard() {
+  showApp();
+  renderDashboardMode();
+  $('#me').textContent = currentUser.name + ' · ' + currentUser.email + ' · acting as ' + roleLabel(currentUser.role);
+  tenantCache = [];
+  $('#tenantPanel').hidden = true;
+  $('#domainPanel').hidden = true;
+  $('#customerPanel').hidden = true;
+  $('#auditPanel').hidden = true;
+  await loadTenants();
+  setupCustomerForm();
+  const tasks = [loadStats(), loadLinks(), loadKeys(), loadCustomers(), loadDomains(), loadClicks(), loadAuditEvents()];
+  const results = await Promise.allSettled(tasks);
+  const failed = results.find(r => r.status === 'rejected');
+  if (failed) showMsg(failed.reason);
 }
 
 async function showDash() {
   currentUser = await api('/api/v1/me');
   if (!currentUser) return;
-  showApp();
-  $('#me').textContent = `${currentUser.name} · ${currentUser.email} · ${roleLabel(currentUser.role)}`;
-  await loadTenants();
-  setupCustomerForm();
-  const tasks = [loadStats(), loadLinks(), loadKeys(), loadCustomers(), loadDomains()];
-  const results = await Promise.allSettled(tasks);
-  const failed = results.find(r => r.status === 'rejected');
-  if (failed) showMsg(failed.reason);
+  await renderDashboard();
 }
 
 async function restoreSession() {

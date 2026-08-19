@@ -99,12 +99,20 @@ func (h *Handler) microsoftCallback(w http.ResponseWriter, r *http.Request) {
 		errOut(w, 403, "user not allowed")
 		return
 	}
+	_, _, lookupErr := h.S.UserByEmail(email)
 	u, err := h.ensureSSOUser(email, claims.Name)
 	if err != nil {
 		errOut(w, 500, "sso user setup failed")
 		return
 	}
-	signed, _ := auth.SignJWT(h.C.JWTSecret, auth.Claims{UserID: u.ID, Email: u.Email, Exp: auth.TokenTTL()})
+	if lookupErr == sql.ErrNoRows {
+		id := u.ID
+		if err := h.S.RecordAudit(models.AuditEvent{ActorUserID: &id, ActorEmail: u.Email, AuthType: "session", Action: "user.provisioned", TargetType: "user", TargetID: fmt.Sprint(u.ID), Outcome: "success", After: userAudit(u), IPAddress: visitorIP(r), UserAgent: r.UserAgent()}); err != nil {
+			errOut(w, 500, "audit log unavailable")
+			return
+		}
+	}
+	signed, _ := auth.SignJWT(h.C.JWTSecret, auth.Claims{UserID: u.ID, Email: u.Email, Mode: defaultDashboardMode(u), Exp: auth.TokenTTL()})
 	setSessionCookie(w, signed)
 	http.Redirect(w, r, "/#app", http.StatusFound)
 }
@@ -151,28 +159,32 @@ func (h *Handler) ensureSSOUser(email, name string) (models.User, error) {
 	if strings.TrimSpace(name) == "" {
 		name = email
 	}
+	tenant, err := h.S.TenantBySlug("alva")
+	if err != nil {
+		return models.User{}, err
+	}
 	pass, _ := auth.HashPassword("sso-disabled-" + time.Now().String() + email)
-	if err := h.S.CreateUser(email, name, "superadmin", nil, pass); err != nil {
+	if err := h.S.CreateUser(email, name, "customer", &tenant.ID, pass); err != nil {
 		return models.User{}, err
 	}
 	u, _, err := h.S.UserByEmail(email)
 	return u, err
 }
 
-func (h *Handler) userFromSession(r *http.Request) (models.User, bool) {
+func (h *Handler) userFromSession(r *http.Request) (principal, bool) {
 	cookie, err := r.Cookie(sessionCookie)
 	if err != nil || cookie.Value == "" {
-		return models.User{}, false
+		return principal{}, false
 	}
 	claims, err := auth.ParseJWT(h.C.JWTSecret, cookie.Value)
 	if err != nil {
-		return models.User{}, false
+		return principal{}, false
 	}
 	u, err := h.S.UserByID(claims.UserID)
-	if err != nil || !h.allowedMicrosoftUser(u.Email) {
-		return models.User{}, false
+	if err != nil || !u.Active || !h.allowedMicrosoftUser(u.Email) {
+		return principal{}, false
 	}
-	return u, true
+	return effectivePrincipal(u, claims.Mode, "session"), true
 }
 
 func setTemporaryCookie(w http.ResponseWriter, name, value string) {

@@ -3,16 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ShortQ Dashboard</title>
-  <link rel="stylesheet" href="/style.css?v=20260814-simple1">
+  <meta name="theme-color" content="#221F1F">
+  <title>shortQ</title>
+  <link rel="icon" href="/alva-favicon.png" type="image/png">
+  <link rel="stylesheet" href="/style.css?v=20260819-alva-refresh1">
 </head>
 <body>
+  <div class="brand-rail" aria-hidden="true"></div>
   <main class="shell">
     <header class="topbar">
-      <div>
-        <p class="eyebrow">ShortQ</p>
-        <h1>Dashboard</h1>
-        <p class="muted">Create short links, manage redirects, make QR codes.</p>
+      <div class="brand-lockup">
+        <img src="/alva-logo.png" alt="ALVA" class="brand-logo">
+        <span class="product-name">shortQ</span>
       </div>
       <nav>
         <button id="loginTab" onclick="login()">Login with Microsoft</button>
@@ -22,15 +24,30 @@
       </nav>
     </header>
 
+    <section class="hero" aria-labelledby="pageTitle">
+      <div>
+        <p class="eyebrow">ALVA link management</p>
+        <h1 id="pageTitle">Make every link count.</h1>
+        <p class="hero-copy">Create branded short links, understand every click, and manage campaigns from one focused workspace.</p>
+      </div>
+      <div class="speed-stripes" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    </section>
+
     <section id="forms" class="card login-card">
-      <h2>Sign in</h2>
-      <p>Use Microsoft SSO to open ShortQ dashboard.</p>
-      <button onclick="login()">Login with Microsoft</button>
+      <p class="eyebrow">Secure workspace</p>
+      <h2>Sign in to ShortQ</h2>
+      <p class="muted">Continue with your ALVA Microsoft account.</p>
+      <button class="login-button" onclick="login()">Continue with Microsoft <span aria-hidden="true">&#8599;</span></button>
     </section>
 
     <section id="dash" hidden>
-      <div class="identity">
-        <span id="me">Loading account...</span>
+      <div class="account-bar">
+        <div class="identity"><span id="me">Loading account...</span></div>
+        <div id="modeSwitcher" class="mode-switcher" hidden aria-label="Dashboard mode">
+          <span>Workspace</span>
+          <button id="adminModeButton" class="secondary" onclick="setDashboardMode('admin')">Admin</button>
+          <button id="userModeButton" class="secondary" onclick="setDashboardMode('user')">User</button>
+        </div>
       </div>
 
       <div id="msg" class="notice"></div>
@@ -53,6 +70,22 @@
           <label>Title
             <input name="title" placeholder="optional label" autocomplete="off">
           </label>
+          <details class="advanced-fields">
+            <summary>Routing, expiration, UTM and security</summary>
+            <div class="form-grid">
+              <label>Redirect code<select name="redirect_code"><option>302</option><option>307</option><option>301</option><option>308</option></select></label>
+              <label>Expires at<input name="expires_at" type="datetime-local"></label>
+              <label>Maximum clicks<input name="max_clicks" type="number" min="1" placeholder="unlimited"></label>
+              <label>Expired destination<input name="expired_url" type="url" placeholder="optional"></label>
+              <label>iOS destination<input name="ios_url" type="url" placeholder="optional"></label>
+              <label>Android destination<input name="android_url" type="url" placeholder="optional"></label>
+              <label>Country routes (JSON)<textarea name="geo_targets" placeholder='[{"country_code":"ID","target_url":"https://..."}]'></textarea></label>
+              <label>Tags<input name="tags" placeholder="campaign; channel"></label>
+              <label>UTM source<input name="utm_source"></label><label>UTM medium<input name="utm_medium"></label>
+              <label>UTM campaign<input name="utm_campaign"></label><label>Password<input name="password" type="password" minlength="8"></label>
+              <label class="check"><input name="forward_query" type="checkbox"> Forward incoming query parameters</label>
+            </div>
+          </details>
           <button type="submit">Create link</button>
         </form>
       </section>
@@ -64,7 +97,7 @@
               <p class="eyebrow">Links</p>
               <h2>Manage links</h2>
             </div>
-            <button class="secondary" onclick="loadLinks()">Refresh</button>
+            <div><button class="secondary" onclick="downloadLinks()">Export CSV</button> <button class="secondary" onclick="$('#csvFile').click()">Import CSV</button> <input id="csvFile" type="file" accept=".csv,text/csv" hidden onchange="importLinks(this)"> <button class="secondary" onclick="loadLinks()">Refresh</button></div>
           </div>
           <div id="links" class="list">Loading links...</div>
         </div>
@@ -80,7 +113,9 @@
             <label>Text or URL
               <input id="qrText" placeholder="https://s.alvaauto.com/demo" autocomplete="off">
             </label>
+            <div class="form-grid"><label>Format<select id="qrFormat"><option>png</option><option>svg</option><option>pdf</option></select></label><label>Size<input id="qrSize" type="number" min="128" max="2048" value="512"></label><label>Foreground<input id="qrForeground" type="color" value="#000000"></label><label>Background<input id="qrBackground" type="color" value="#ffffff"></label></div>
             <button onclick="makeQR()">Generate QR</button>
+            <button class="secondary" onclick="downloadQR()">Download</button>
             <img id="qrImg" alt="QR result">
           </div>
           <div class="card compact">
@@ -96,6 +131,13 @@
         </aside>
       </section>
 
+      <section class="card">
+        <div class="card-title"><div><p class="eyebrow">Clickstream</p><h2>Recent activity</h2></div><button class="secondary" onclick="loadClicks()">Refresh</button></div>
+        <div id="breakdown" class="stats"></div>
+        <div id="clicks" class="list small">Loading clicks...</div>
+      </section>
+
+      <div id="adminSection" hidden>
       <section id="tenantPanel" class="card" hidden>
         <div class="card-title">
           <div>
@@ -103,11 +145,7 @@
             <h2>Departments</h2>
           </div>
         </div>
-        <form class="inline-form" onsubmit="createTenant(event)">
-          <input name="name" placeholder="Department name" required>
-          <input name="slug" placeholder="department-slug" required>
-          <button type="submit">Create department</button>
-        </form>
+        <p class="muted">All ShortQ users belong to the single ALVA department.</p>
         <div id="tenants" class="list small"></div>
       </section>
 
@@ -141,8 +179,55 @@
           <div id="customers" class="list small"></div>
         </div>
       </section>
+      <section id="auditPanel" class="card" hidden>
+        <div class="card-title"><div><p class="eyebrow">Security</p><h2>Audit log</h2></div><button class="secondary" onclick="loadAuditEvents()">Refresh</button></div>
+        <form id="auditFilters" class="form-grid" onsubmit="event.preventDefault(); loadAuditEvents()">
+          <label>Actor email<input name="actor" type="email" placeholder="user@alvaauto.com"></label>
+          <label>Action<input name="action" placeholder="link.deleted"></label>
+          <label>Target type<select name="target_type"><option value="">all</option><option>link</option><option>domain</option><option>api_key</option><option>user</option></select></label>
+          <label>Outcome<select name="outcome"><option value="">all</option><option>success</option><option>denied</option></select></label>
+          <label>From<input name="from" type="datetime-local"></label><label>To<input name="to" type="datetime-local"></label>
+          <button type="submit">Filter</button>
+        </form>
+        <div id="auditEvents" class="list small">Loading audit events...</div>
+      </section>
+      </div>
     </section>
+    <footer class="site-footer">
+      <div class="speed-stripes small" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <p>ALVA &middot; ShortQ</p>
+      <span>Internal link management</span>
+    </footer>
   </main>
-  <script src="/app.js?v=20260814-dept-edit1"></script>
+  <dialog id="linkEditor">
+    <form method="dialog" id="editLinkForm" onsubmit="saveLink(event)">
+      <div class="card-title"><div><p class="eyebrow">Edit target and rules</p><h2 id="editSlug"></h2></div><button type="button" class="secondary" onclick="$('#linkEditor').close()">Close</button></div>
+      <input name="id" type="hidden">
+      <div class="form-grid">
+        <label>Destination URL<input name="url" type="url" required></label><label>Title<input name="title"></label>
+        <label>Redirect code<select name="redirect_code"><option>302</option><option>307</option><option>301</option><option>308</option></select></label>
+        <label>Expires at<input name="expires_at" type="datetime-local"></label><label>Maximum clicks<input name="max_clicks" type="number" min="1"></label>
+        <label>Expired destination<input name="expired_url" type="url"></label><label>iOS destination<input name="ios_url" type="url"></label><label>Android destination<input name="android_url" type="url"></label>
+        <label>Country routes (JSON)<textarea name="geo_targets"></textarea></label><label>Tags<input name="tags"></label>
+        <label>UTM source<input name="utm_source"></label><label>UTM medium<input name="utm_medium"></label><label>UTM campaign<input name="utm_campaign"></label>
+        <label>Replace password<input name="password" type="password" minlength="8" placeholder="leave blank to keep"></label>
+        <label class="check"><input name="clear_password" type="checkbox"> Remove password</label><label class="check"><input name="forward_query" type="checkbox"> Forward incoming query parameters</label>
+      </div>
+      <p class="muted">The slug is permanent. Editing changes the destination and rules only.</p>
+      <button type="submit">Save changes</button>
+    </form>
+  </dialog>
+  <dialog id="confirmDialog" class="confirm-dialog" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+    <form method="dialog">
+      <p class="eyebrow">Please confirm</p>
+      <h2 id="confirmTitle"></h2>
+      <p id="confirmMessage" class="confirm-message"></p>
+      <div class="dialog-actions">
+        <button type="submit" value="cancel" class="secondary">Cancel</button>
+        <button id="confirmButton" type="submit" value="confirm">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+  <script src="/app.js?v=20260819-alva-refresh1"></script>
 </body>
 </html>

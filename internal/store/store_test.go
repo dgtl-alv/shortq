@@ -1,6 +1,8 @@
 package store
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,82 +11,82 @@ import (
 	"shortq/internal/models"
 )
 
-func TestDepartmentUserCanListUpdateAndDeleteDepartmentLinks(t *testing.T) {
+func TestListLinksPageUsesBatchedGeoHydration(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
-		t.Fatalf("sqlmock: %v", err)
+		t.Fatal(err)
 	}
 	defer db.Close()
+	store := New(db)
+	tenantID := int64(46)
+	user := models.User{ID: 1, TenantID: &tenantID, Role: "customer"}
+	columns := []string{"id", "user_id", "tenant_id", "slug", "target_url", "title", "clicks", "redirect_code", "expires_at", "max_clicks", "expired_url", "ios_url", "android_url", "forward_query", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "tags_json", "password_hash", "created_at"}
+	rows := sqlmock.NewRows(columns)
+	for _, id := range []int64{10, 9, 8} {
+		rows.AddRow(id, 1, tenantID, "slug-test", "https://example.org", "", 0, 302, nil, nil, "", "", "", true, "", "", "", "", "", []byte(`[]`), nil, time.Now())
+	}
+	query := `SELECT ` + linkColumns + ` FROM links WHERE 1=1 AND tenant_id=? ORDER BY id DESC LIMIT ?`
+	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs(tenantID, 3).WillReturnRows(rows)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT link_id,country_code,target_url FROM link_geo_targets WHERE link_id IN (?,?,?) ORDER BY link_id,country_code`)).
+		WithArgs(int64(10), int64(9), int64(8)).
+		WillReturnRows(sqlmock.NewRows([]string{"link_id", "country_code", "target_url"}).
+			AddRow(10, "ID", "https://id.example.org").
+			AddRow(9, "SG", "https://sg.example.org"))
 
-	s := &Store{DB: db}
-	tenantID := int64(10)
-	user := models.User{ID: 7, TenantID: &tenantID, Role: "customer"}
-	created := time.Now()
-
-	mock.ExpectQuery("SELECT id,user_id,tenant_id,slug,target_url,title,clicks,created_at FROM links WHERE tenant_id=\\? ORDER BY id DESC").
-		WithArgs(tenantID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "tenant_id", "slug", "target_url", "title", "clicks", "created_at"}).
-			AddRow(100, 8, tenantID, "dept-link", "https://example.com", "Dept link", 0, created))
-
-	links, err := s.ListLinks(user)
+	page, err := store.ListLinksPage(user, 2, 0)
 	if err != nil {
-		t.Fatalf("ListLinks: %v", err)
+		t.Fatal(err)
 	}
-	if len(links) != 1 || links[0].UserID != 8 || links[0].TenantID == nil || *links[0].TenantID != tenantID {
-		t.Fatalf("ListLinks returned %#v", links)
+	if len(page.Items) != 2 || page.NextCursor != 9 || len(page.Items[0].GeoTargets) != 1 {
+		t.Fatalf("unexpected page: %#v", page)
 	}
-
-	mock.ExpectExec("UPDATE links SET slug=\\?, target_url=\\?, title=\\? WHERE id=\\? AND tenant_id=\\?").
-		WithArgs("updated-link", "https://example.org", "Updated", int64(100), tenantID).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery("SELECT id,user_id,tenant_id,slug,target_url,title,clicks,created_at FROM links WHERE id=\\? AND tenant_id=\\?").
-		WithArgs(int64(100), tenantID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "tenant_id", "slug", "target_url", "title", "clicks", "created_at"}).
-			AddRow(100, 8, tenantID, "updated-link", "https://example.org", "Updated", 0, created))
-
-	updated, err := s.UpdateLink(user, 100, "updated-link", "https://example.org", "Updated")
-	if err != nil {
-		t.Fatalf("UpdateLink: %v", err)
-	}
-	if updated.UserID != 8 || updated.Slug != "updated-link" {
-		t.Fatalf("UpdateLink returned %#v", updated)
-	}
-
-	mock.ExpectExec("DELETE FROM links WHERE id=\\? AND tenant_id=\\?").
-		WithArgs(int64(100), tenantID).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	if err := s.DeleteLink(user, 100); err != nil {
-		t.Fatalf("DeleteLink: %v", err)
-	}
-
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unmet expectations: %v", err)
+		t.Fatalf("query count/regression: %v", err)
 	}
 }
 
-func TestDepartmentUserCannotUpdateOtherDepartmentLink(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("sqlmock: %v", err)
+func TestValidateLinkAllowsEditableTargetWithImmutableSlug(t *testing.T) {
+	link := models.Link{Slug: "fixed-slug", TargetURL: "https://example.org/new-target", RedirectCode: 302, ForwardQuery: true}
+	if err := ValidateLink(link); err != nil {
+		t.Fatalf("valid link rejected: %v", err)
 	}
-	defer db.Close()
-
-	s := &Store{DB: db}
-	tenantID := int64(10)
-	user := models.User{ID: 7, TenantID: &tenantID, Role: "customer"}
-
-	mock.ExpectExec("UPDATE links SET slug=\\?, target_url=\\?, title=\\? WHERE id=\\? AND tenant_id=\\?").
-		WithArgs("other-link", "https://example.org", "Other", int64(200), tenantID).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery("SELECT id,user_id,tenant_id,slug,target_url,title,clicks,created_at FROM links WHERE id=\\? AND tenant_id=\\?").
-		WithArgs(int64(200), tenantID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "tenant_id", "slug", "target_url", "title", "clicks", "created_at"}))
-
-	if _, err := s.UpdateLink(user, 200, "other-link", "https://example.org", "Other"); err == nil {
-		t.Fatal("UpdateLink expected error for link outside department")
+	if link.Slug != "fixed-slug" {
+		t.Fatal("validation changed the immutable slug")
 	}
+}
 
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unmet expectations: %v", err)
+func TestValidateLinkRejectsPermanentDynamicRedirect(t *testing.T) {
+	link := models.Link{TargetURL: "https://example.org", RedirectCode: 301, IOSURL: "https://apps.apple.com/example"}
+	err := ValidateLink(link)
+	if err == nil || !strings.Contains(err.Error(), "permanent") {
+		t.Fatalf("expected permanent dynamic redirect rejection, got %v", err)
+	}
+}
+
+func TestValidateLinkRejectsDuplicateGeoCountry(t *testing.T) {
+	link := models.Link{TargetURL: "https://example.org", RedirectCode: 302, GeoTargets: []models.GeoTarget{{CountryCode: "ID", TargetURL: "https://id.example.org"}, {CountryCode: "id", TargetURL: "https://another.example.org"}}}
+	if err := ValidateLink(link); err == nil {
+		t.Fatal("expected duplicate country rejection")
+	}
+}
+
+func TestValidateLinkRejectsNonISOCountry(t *testing.T) {
+	link := models.Link{TargetURL: "https://example.org", RedirectCode: 302, GeoTargets: []models.GeoTarget{{CountryCode: "ZZ", TargetURL: "https://zz.example.org"}}}
+	if err := ValidateLink(link); err == nil || !strings.Contains(err.Error(), "ISO-3166") {
+		t.Fatalf("expected ISO country rejection, got %v", err)
+	}
+}
+
+func TestValidateLinkRejectsPermanentQueryForwarding(t *testing.T) {
+	link := models.Link{TargetURL: "https://example.org", RedirectCode: 308, ForwardQuery: true}
+	if err := ValidateLink(link); err == nil || !strings.Contains(err.Error(), "permanent") {
+		t.Fatalf("expected permanent query-forwarding rejection, got %v", err)
+	}
+}
+
+func TestValidateLinkAllowsStaticPermanentRedirect(t *testing.T) {
+	link := models.Link{TargetURL: "https://example.org", RedirectCode: 308, ForwardQuery: false}
+	if err := ValidateLink(link); err != nil {
+		t.Fatalf("static permanent redirect rejected: %v", err)
 	}
 }

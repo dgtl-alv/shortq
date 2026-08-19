@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+*.log
+server
+docker-compose*.yml
+scripts
+internal/**/*_test.go

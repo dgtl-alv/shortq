@@ -1,6 +1,11 @@
 package config
 
-import "os"
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+)
 
 type Config struct {
 	Addr              string
@@ -42,6 +47,24 @@ func Load() Config {
 		SMTPPass:          os.Getenv("SMTP_PASS"),
 		SMTPFrom:          env("SMTP_FROM", "no-reply@localhost"),
 	}
+}
+
+func Validate(c Config) error {
+	if len(c.JWTSecret) < 32 || c.JWTSecret == "dev-secret-change-me-min-32-chars" {
+		return errors.New("JWT_SECRET must be a non-default secret of at least 32 characters")
+	}
+	if len(c.SuperPassword) < 16 || c.SuperPassword == "ChangeMe123!" {
+		return errors.New("SUPERADMIN_PASSWORD must be a non-default value of at least 16 characters")
+	}
+	for name, value := range map[string]string{"OIDC_TENANT_ID": c.OIDCTenantID, "OIDC_CLIENT_ID": c.OIDCClientID, "OIDC_CLIENT_SECRET": c.OIDCClientSecret, "OIDC_REDIRECT_URL": c.OIDCRedirectURL} {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s is required", name)
+		}
+	}
+	if strings.TrimSpace(c.OIDCAllowedEmail) == "" && strings.TrimSpace(c.OIDCAllowedDomain) == "" {
+		return errors.New("OIDC_ALLOWED_EMAIL or OIDC_ALLOWED_DOMAIN is required")
+	}
+	return nil
 }
 
 func env(k, d string) string {
