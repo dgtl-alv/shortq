@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"time"
+	_ "time/tzdata" // Embed IANA zones for the minimal production image.
 
 	"shortq/internal/auth"
 	"shortq/internal/config"
