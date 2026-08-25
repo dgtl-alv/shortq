@@ -168,7 +168,7 @@ QR endpoint publik:
 
 1. Cari link di daftar.
 2. Klik `Delete`.
-3. Link tidak bisa dipakai lagi setelah dihapus.
+3. Link tidak bisa dipakai lagi setelah dihapus. Slug dan analytics tetap disimpan, sehingga slug tidak dapat dipakai ulang.
 
 ### Membuat API Key
 
@@ -203,6 +203,17 @@ curl -H 'X-API-Key: sq_live_xxx' http://localhost:8080/api/v1/links
 4. Saat SMTP belum dikonfigurasi, reset token tampil di log server.
 5. Masuk dashboard, isi `reset token optional` dan password baru di bagian `Change password`.
 
+## Visibility dan Report
+
+- Link baru bersifat private secara default. Pemilik dapat memilih Shared with ALVA agar user lain dalam department yang sama dapat melihat link, QR, dan report-nya.
+- User biasa yang melihat link milik rekan tidak dapat mengedit atau menghapusnya. Admin department dapat mengelola semua link dalam department; superadmin dapat mengelola semua link.
+- Klik Report pada baris link untuk membuka report link. Klik My report untuk report semua link milik sendiri. Admin juga dapat membuka report user dari panel Users.
+- Report menyediakan filter 7, 30, atau 90 hari dan rentang khusus. Hari dihitung memakai timezone browser.
+- KPI mencakup total, klik periode, human, bot, estimasi unique visitor, percobaan expired, rata-rata per hari, peak day, dan perbandingan periode sebelumnya bila data tersedia.
+- Chart mencakup trend harian, human/bot, negara, device, browser, OS, referrer, UTM, campaign, route, dan status. Report user juga menampilkan ranking link.
+- Download Summary CSV untuk agregat atau Events CSV untuk event aman. Export event tidak menyertakan IP, user-agent mentah, full referrer URL, atau resolved destination URL.
+- Detail event dan estimasi unique tersedia untuk 90 hari terakhir. Unique visitor adalah estimasi distinct IP untuk klik human yang berhasil.
+
 ## API Docs
 
 - UI docs offline: `http://localhost:8080/docs`
@@ -217,10 +228,13 @@ curl -H 'X-API-Key: sq_live_xxx' http://localhost:8080/api/v1/links
 | Create tenant user | Yes | No | No |
 | Create customer | Yes | Yes, own tenant | No |
 | List customers | All tenant/customer users | Own tenant customers | No |
-| View links | All links | Own tenant links | Own links |
+| View links | All links | Own tenant links | Own + shared tenant links |
+| Edit links | All links | Own tenant links | Own links |
 | Delete links | All links | Own tenant links | Own links |
 | Create links | Yes | Yes | Yes |
-| Analytics | Global | Own tenant | Own links |
+| Detailed link report | All links | Own tenant links | Own + shared tenant links |
+| User report | All users | Own tenant users | Self |
+| Overview analytics | Global | Own tenant | Own links |
 | API keys | Own account | Own account | Own account |
 | QR generator | Yes | Yes | Yes |
 

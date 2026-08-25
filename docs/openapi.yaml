@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: ShortQ API
-  version: 2.1.0
+  version: 2.2.0
   description: ShortQ technical API. Link slugs are immutable after creation. Dynamic routing never uses permanent redirects. Cursor pagination and transactional bulk operations support large link sets. Raw click IPs are retained for 90 days; daily aggregates remain available.
 servers:
   - url: https://s.alvaauto.com
@@ -48,9 +48,63 @@ paths:
           application/json:
             schema: {type: object, required: [mode], properties: {mode: {type: string, enum: [admin, user]}}}
       responses: {'200': {description: Updated session user}, '400': {description: Invalid mode}, '403': {description: Admin account required}}
+  /api/v1/reports/links/{id}:
+    get:
+      description: Comprehensive link report. Owners and scoped admins can view private links; department-shared links are readable by users in the same department. Deleted links remain reportable to their owner and scoped admins.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, minimum: 1}}
+        - {name: from, in: query, schema: {type: string, format: date}, description: First local day, inclusive.}
+        - {name: to, in: query, schema: {type: string, format: date}, description: Last boundary date, exclusive.}
+        - {name: timezone, in: query, schema: {type: string, example: Asia/Jakarta}, description: IANA timezone; defaults to UTC.}
+      responses: {'200': {description: Link report, content: {application/json: {schema: {$ref: '#/components/schemas/AnalyticsReport'}}}}, '400': {description: Invalid or more than 90-day range}, '404': {description: Link not visible}}
+  /api/v1/reports/links/{id}/summary.csv:
+    get:
+      description: Aggregated KPI, daily, and breakdown export for a visible link.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, minimum: 1}}
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}}
+        - {name: timezone, in: query, schema: {type: string}}
+      responses: {'200': {description: Summary CSV, content: {text/csv: {schema: {type: string}}}}}
+  /api/v1/reports/links/{id}/events.csv:
+    get:
+      description: Privacy-safe event export. Excludes IP, raw user agent, full referrer URL, and resolved destination URL.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, minimum: 1}}
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}}
+        - {name: timezone, in: query, schema: {type: string}}
+      responses: {'200': {description: Events CSV, content: {text/csv: {schema: {type: string}}}}}
+  /api/v1/reports/users/{id}:
+    get:
+      description: Report across links owned by one user. Use me for the current user. Superadmins may inspect any user; department admins may inspect users in their department.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, pattern: '^(me|[1-9][0-9]*)$'}}
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}}
+        - {name: timezone, in: query, schema: {type: string, example: Asia/Jakarta}}
+      responses: {'200': {description: User report, content: {application/json: {schema: {$ref: '#/components/schemas/AnalyticsReport'}}}}, '400': {description: Invalid or more than 90-day range}, '404': {description: User not visible}}
+  /api/v1/reports/users/{id}/summary.csv:
+    get:
+      description: Aggregated KPI, daily, and breakdown export for a visible user report.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}}
+        - {name: timezone, in: query, schema: {type: string}}
+      responses: {'200': {description: Summary CSV, content: {text/csv: {schema: {type: string}}}}}
+  /api/v1/reports/users/{id}/events.csv:
+    get:
+      description: Privacy-safe event export for links owned by a visible user.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}}
+        - {name: timezone, in: query, schema: {type: string}}
+      responses: {'200': {description: Events CSV, content: {text/csv: {schema: {type: string}}}}}
   /api/v1/analytics:
     get:
-      description: Scope follows role. Superadmin sees all, tenant sees own tenant, customer sees own links.
+      description: Legacy overview. Scope follows role. Superadmin sees all, tenant sees own tenant, and customer sees owned links.
       responses: {'200': {description: Analytics summary, content: {application/json: {schema: {$ref: '#/components/schemas/Analytics'}}}}}
   /api/v1/analytics/timeseries:
     get:
@@ -182,8 +236,9 @@ paths:
         content: {application/json: {schema: {$ref: '#/components/schemas/LinkWrite'}}}
       responses: {'200': {description: Updated link, content: {application/json: {schema: {$ref: '#/components/schemas/Link'}}}}, '400': {description: Invalid settings or attempted slug update}}
     delete:
+      description: Soft-deletes the link. Redirecting stops immediately while retained analytics and the globally unique slug remain reserved.
       parameters: [{name: id, in: path, required: true, schema: {type: integer}}]
-      responses: {'204': {description: Deleted}}
+      responses: {'204': {description: Soft-deleted}}
   /api/v1/links/import:
     post:
       description: Imports up to 10,000 CSV rows. Use dry_run=true to validate without writing. The destination column may be named `url` or `target_url`; if both are present, their values must match.
@@ -199,7 +254,7 @@ paths:
       requestBody: {content: {application/json: {schema: {type: object, required: [ids, set], properties: {ids: {type: array, maxItems: 500, items: {type: integer}}, set: {$ref: '#/components/schemas/LinkWrite'}}}}}}
       responses: {'200': {description: Updated links}, '400': {description: Invalid IDs or settings}, '404': {description: One or more scoped links not found}, '409': {description: No links updated because the transaction failed}}
     delete:
-      description: Transactionally deletes up to 500 unique links. If any scoped link is absent, no links are deleted.
+      description: Transactionally soft-deletes up to 500 unique links. If any scoped link is absent, no links are deleted. Analytics are retained and slugs remain reserved.
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [ids], properties: {ids: {type: array, minItems: 1, maxItems: 500, uniqueItems: true, items: {type: integer, minimum: 1}}}}}}}
       responses: {'200': {description: Deleted count}, '400': {description: Invalid IDs}, '404': {description: One or more links not found; no links deleted}}
   /api/v1/qr:
@@ -297,6 +352,52 @@ components:
       type: object
       required: [key, clicks]
       properties: {key: {type: string}, clicks: {type: integer}}
+    ReportSummary:
+      type: object
+      properties:
+        all_time_clicks: {type: integer}
+        period_clicks: {type: integer}
+        human_clicks: {type: integer}
+        bot_clicks: {type: integer}
+        estimated_unique_visitors: {type: integer, description: Distinct IP estimate among successful human redirects within retained detail.}
+        expired_attempts: {type: integer}
+        average_clicks_per_day: {type: number, format: double}
+        peak_day: {type: string, format: date}
+        peak_day_clicks: {type: integer}
+        previous_period_clicks: {type: integer, nullable: true}
+        change_percent: {type: number, format: double, nullable: true}
+        active_links: {type: integer}
+        deleted_links: {type: integer}
+        private_links: {type: integer}
+        shared_links: {type: integer}
+    ReportDailyPoint:
+      type: object
+      required: [day, clicks, human_clicks, bot_clicks]
+      properties: {day: {type: string, format: date}, clicks: {type: integer}, human_clicks: {type: integer}, bot_clicks: {type: integer}}
+    SafeClickEvent:
+      type: object
+      description: Privacy-safe event without IP, raw user agent, full referrer, or resolved URL.
+      properties: {id: {type: integer}, link_id: {type: integer}, slug: {type: string}, country_code: {type: string}, status_code: {type: integer}, route_type: {type: string}, browser: {type: string}, os: {type: string}, device: {type: string}, is_bot: {type: boolean}, referrer_host: {type: string}, utm_source: {type: string}, utm_medium: {type: string}, utm_campaign: {type: string}, created_at: {type: string, format: date-time}}
+    ReportLinkRank:
+      type: object
+      properties: {id: {type: integer}, slug: {type: string}, title: {type: string}, visibility: {type: string, enum: [private, department]}, period_clicks: {type: integer}, all_time_clicks: {type: integer}, deleted_at: {type: string, format: date-time, nullable: true}}
+    AnalyticsReport:
+      type: object
+      required: [subject, from, to, timezone, detail_retained_days, unique_is_estimate, summary, daily, breakdowns, recent_events]
+      properties:
+        subject: {type: object, additionalProperties: true}
+        from: {type: string, format: date}
+        to: {type: string, format: date}
+        timezone: {type: string}
+        detail_retained_days: {type: integer, example: 90}
+        unique_is_estimate: {type: boolean}
+        summary: {$ref: '#/components/schemas/ReportSummary'}
+        daily: {type: array, items: {$ref: '#/components/schemas/ReportDailyPoint'}}
+        breakdowns:
+          type: object
+          additionalProperties: {type: array, items: {$ref: '#/components/schemas/AnalyticsPoint'}}
+        top_links: {type: array, items: {$ref: '#/components/schemas/ReportLinkRank'}}
+        recent_events: {type: array, items: {$ref: '#/components/schemas/SafeClickEvent'}}
     GeoTarget:
       type: object
       required: [country_code, target_url]
@@ -318,6 +419,7 @@ components:
         target_url: {type: string, format: uri, description: Destination URL alias matching the Link response field. If both aliases are supplied they must match.}
         slug: {type: string, minLength: 3, maxLength: 80, description: Create only; immutable afterward.}
         title: {type: string}
+        visibility: {type: string, enum: [private, department], default: private, description: Dashboard/report visibility only; the public redirect remains public unless password-protected.}
         redirect_code: {type: integer, enum: [301, 302, 307, 308], default: 302, description: 301 and 308 require all dynamic routing, password, expiry, click-limit and query-forwarding features to be disabled.}
         expires_at: {type: string, format: date-time, nullable: true}
         max_clicks: {type: integer, minimum: 1, nullable: true}
@@ -337,7 +439,7 @@ components:
         clear_password: {type: boolean}
     Link:
       type: object
-      required: [id, user_id, slug, target_url, title, short_url, clicks, redirect_code, forward_query, tags, geo_targets, password_protected, created_at]
+      required: [id, user_id, slug, target_url, title, visibility, short_url, clicks, redirect_code, forward_query, tags, geo_targets, password_protected, created_at]
       properties:
         id: {type: integer}
         user_id: {type: integer}
@@ -345,6 +447,7 @@ components:
         slug: {type: string}
         target_url: {type: string, format: uri}
         title: {type: string}
+        visibility: {type: string, enum: [private, department]}
         short_url: {type: string, format: uri}
         clicks: {type: integer}
         redirect_code: {type: integer, enum: [301, 302, 307, 308]}
@@ -363,6 +466,7 @@ components:
         geo_targets: {type: array, items: {$ref: '#/components/schemas/GeoTarget'}}
         password_protected: {type: boolean}
         created_at: {type: string, format: date-time}
+        deleted_at: {type: string, format: date-time, nullable: true}
     LinkPage:
       type: object
       required: [items]

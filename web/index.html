@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#221F1F">
   <title>shortQ</title>
   <link rel="icon" href="/alva-favicon.png" type="image/png">
-  <link rel="stylesheet" href="/style.css?v=20260819-alva-refresh1">
+  <link rel="stylesheet" href="/style.css?v=20260825-reports1">
 </head>
 <body>
   <div class="brand-rail" aria-hidden="true"></div>
@@ -46,15 +46,19 @@
     <section id="dash" hidden>
       <div class="account-bar">
         <div class="identity"><span id="me">Loading account...</span></div>
+        <div class="account-actions">
+          <button class="secondary" onclick="openUserReport('me')">My report</button>
         <div id="modeSwitcher" class="mode-switcher" hidden aria-label="Dashboard mode">
           <span>Workspace</span>
           <button id="adminModeButton" class="secondary" onclick="setDashboardMode('admin')">Admin</button>
           <button id="userModeButton" class="secondary" onclick="setDashboardMode('user')">User</button>
         </div>
+        </div>
       </div>
 
       <div id="msg" class="notice"></div>
 
+      <div id="dashboardHome">
       <section class="card primary-card">
         <div class="card-title">
           <div>
@@ -72,6 +76,9 @@
           </label>
           <label>Title
             <input name="title" placeholder="optional label" autocomplete="off">
+          </label>
+          <label>Dashboard visibility
+            <select name="visibility"><option value="private">Private to me</option><option value="department">Shared with ALVA</option></select>
           </label>
           <details class="advanced-fields">
             <summary>Routing, expiration, UTM and security</summary>
@@ -195,6 +202,46 @@
         <div id="auditEvents" class="list small">Loading audit events...</div>
       </section>
       </div>
+      </div>
+
+      <section id="reportView" hidden aria-live="polite">
+        <div class="card report-heading">
+          <div>
+            <button class="secondary back-button" onclick="backToDashboard()">&#8592; Back to dashboard</button>
+            <p class="eyebrow">Statistical report</p>
+            <h2 id="reportTitle">Loading report...</h2>
+            <p id="reportSubtitle" class="muted"></p>
+          </div>
+          <div class="report-actions">
+            <button class="secondary" onclick="downloadReport('summary.csv')">Summary CSV</button>
+            <button class="secondary" onclick="downloadReport('events.csv')">Events CSV</button>
+          </div>
+        </div>
+        <form id="reportFilters" class="card report-filters" onsubmit="event.preventDefault(); loadCurrentReport()">
+          <label>Period
+            <select id="reportPreset" onchange="setReportPreset(this.value)">
+              <option value="7">Last 7 days</option>
+              <option value="30" selected>Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label>Start date<input id="reportFrom" type="date" required></label>
+          <label>End date<input id="reportTo" type="date" required></label>
+          <button type="submit">Apply</button>
+        </form>
+        <div id="reportCoverage" class="notice ok"></div>
+        <div id="reportSummary" class="report-kpis"></div>
+        <div id="reportCharts" class="report-chart-grid"></div>
+        <section id="reportTopLinksCard" class="card" hidden>
+          <div class="card-title"><div><p class="eyebrow">Owned links</p><h2>Top links</h2></div></div>
+          <div id="reportTopLinks" class="list"></div>
+        </section>
+        <section class="card">
+          <div class="card-title"><div><p class="eyebrow">Privacy-safe detail</p><h2>Recent events</h2></div></div>
+          <div class="table-scroll"><table class="event-table"><thead><tr><th>Time</th><th>Link</th><th>Country</th><th>Client</th><th>Referrer</th><th>Campaign</th><th>Outcome</th></tr></thead><tbody id="reportEvents"></tbody></table></div>
+        </section>
+      </section>
     </section>
     <footer class="site-footer">
       <div class="speed-stripes small" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
@@ -208,6 +255,7 @@
       <input name="id" type="hidden">
       <div class="form-grid">
         <label>Destination URL<input name="url" type="url" required></label><label>Title<input name="title"></label>
+        <label>Dashboard visibility<select name="visibility"><option value="private">Private to owner</option><option value="department">Shared with ALVA</option></select></label>
         <label>Redirect code<select name="redirect_code"><option>302</option><option>307</option><option>301</option><option>308</option></select></label>
         <label>Expires at<input name="expires_at" type="datetime-local"></label><label>Maximum clicks<input name="max_clicks" type="number" min="1"></label>
         <label>Expired destination<input name="expired_url" type="url"></label><label>iOS destination<input name="ios_url" type="url"></label><label>Android destination<input name="android_url" type="url"></label>
@@ -231,6 +279,7 @@
       </div>
     </form>
   </dialog>
-  <script src="/app.js?v=20260819-alva-refresh1"></script>
+  <script src="/reports.js?v=20260825-reports1"></script>
+  <script src="/app.js?v=20260825-reports1"></script>
 </body>
 </html>

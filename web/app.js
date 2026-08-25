@@ -96,21 +96,22 @@ async function loadLinks() {
   const xs = page.items || [];
   linkCache = xs;
   $('#links').innerHTML = xs.map(x => `
-    <div class="row">
+    <div class="row link-row">
       <div>
         <b>${esc(x.title || x.slug)}</b>
         <a href="${esc(x.short_url)}" target="_blank" rel="noopener">${esc(x.short_url)}</a>
-        <div class="tiny">${esc(x.target_url)} · ${x.clicks} clicks</div>
+        <div class="tiny">${esc(x.target_url)} · ${x.clicks} clicks · ${esc(x.visibility === "department" ? "shared with ALVA" : "private")}</div>
       </div>
-      <button class="secondary" onclick="editLink(${x.id})">Edit</button>
+      <button class="secondary" onclick="openLinkReport(${x.id})">Report</button>
+      ${canManageLink(x) ? '<button class="secondary" onclick="editLink(' + x.id + ')">Edit</button>' : ''}
       <button class="secondary" onclick="qrForLink(${x.id})">QR</button>
-      ${currentUser && currentUser.can_delete ? `<button class="danger" onclick="delLink(${x.id})">Delete</button>` : '<button class="danger" disabled title="Deletion access must be activated by a superadmin">Delete locked</button>'}
+      ${canManageLink(x) ? (currentUser && currentUser.can_delete ? `<button class="danger" onclick="delLink(${x.id})">Delete</button>` : '<button class="danger" disabled title="Deletion access must be activated by a superadmin">Delete locked</button>') : ''}
     </div>`).join('') || '<div class="empty">No links yet. Create first link above.</div>';
 }
 
 function linkPayloadFromForm(form, creating = false) {
   const raw = data({ target: form });
-  const payload = { url: raw.url || '', title: raw.title || '', redirect_code: Number(raw.redirect_code || 302), forward_query: form.elements.forward_query ? form.elements.forward_query.checked : true };
+  const payload = { url: raw.url || '', title: raw.title || '', visibility: raw.visibility || 'private', redirect_code: Number(raw.redirect_code || 302), forward_query: form.elements.forward_query ? form.elements.forward_query.checked : true };
   if (creating && raw.slug) payload.slug = raw.slug;
   ['expired_url', 'ios_url', 'android_url', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach(key => { if (key in raw) payload[key] = raw[key] || ''; });
   if (raw.expires_at) payload.expires_at = new Date(raw.expires_at).toISOString(); else if (!creating) payload.expires_at = '';
@@ -128,7 +129,7 @@ function editLink(id) {
   const form = $('#editLinkForm');
   form.reset();
   $('#editSlug').textContent = '/' + link.slug;
-  const values = { id: link.id, url: link.target_url, title: link.title, redirect_code: link.redirect_code || 302, expired_url: link.expired_url, ios_url: link.ios_url, android_url: link.android_url, geo_targets: JSON.stringify(link.geo_targets || []), tags: (link.tags || []).join('; '), utm_source: link.utm_source, utm_medium: link.utm_medium, utm_campaign: link.utm_campaign };
+  const values = { id: link.id, url: link.target_url, title: link.title, visibility: link.visibility || 'private', redirect_code: link.redirect_code || 302, expired_url: link.expired_url, ios_url: link.ios_url, android_url: link.android_url, geo_targets: JSON.stringify(link.geo_targets || []), tags: (link.tags || []).join('; '), utm_source: link.utm_source, utm_medium: link.utm_medium, utm_campaign: link.utm_campaign };
   Object.entries(values).forEach(([key, value]) => { if (form.elements[key]) form.elements[key].value = value || ''; });
   if (link.expires_at) form.elements.expires_at.value = new Date(link.expires_at).toISOString().slice(0, 16);
   if (link.max_clicks) form.elements.max_clicks.value = link.max_clicks;
@@ -161,7 +162,7 @@ async function importLinks(input) {
 
 async function delLink(id) {
   const link = linkCache.find(item => item.id === id);
-  if (!await confirmAction({ title: 'Delete short link?', message: `/${link ? link.slug : 'this link'} will stop redirecting immediately. This action cannot be undone.`, confirmLabel: 'Delete link', danger: true })) return;
+  if (!await confirmAction({ title: 'Delete short link?', message: `/${link ? link.slug : 'this link'} will stop redirecting immediately. Its analytics will be retained.`, confirmLabel: 'Delete link', danger: true })) return;
   try {
     await api('/api/v1/links/' + id, { method: 'DELETE' });
     showMsg('Link deleted.', 'ok');
@@ -284,7 +285,7 @@ async function loadCustomers() {
   setupCustomerForm();
   const xs = await api('/api/v1/customers') || [];
   $('#customerPanel').hidden = false;
-  $('#customers').innerHTML = xs.map(u => `<div class="row"><div><b>${esc(u.name)}</b><div class="tiny">${esc(u.email)} · ${esc(roleLabel(u.role))} · department ${u.tenant_id || '-'} · deletion ${u.role === 'superadmin' ? 'always allowed' : (u.deletion_access ? 'enabled' : 'locked')}</div></div>${currentUser.role === 'superadmin' && u.role !== 'superadmin' ? `<button class="${u.deletion_access ? 'danger' : 'secondary'}" onclick="setDeletionAccess(${u.id}, ${!u.deletion_access})">${u.deletion_access ? 'Disable deletion' : 'Enable deletion'}</button>` : ''}</div>`).join('') || '<div class="empty">No users.</div>';
+  $('#customers').innerHTML = xs.map(u => `<div class="row"><div><b>${esc(u.name)}</b><div class="tiny">${esc(u.email)} · ${esc(roleLabel(u.role))} · department ${u.tenant_id || '-'} · deletion ${u.role === 'superadmin' ? 'always allowed' : (u.deletion_access ? 'enabled' : 'locked')}</div></div><button class="secondary" onclick="openUserReport(${u.id})">Report</button>${currentUser.role === 'superadmin' && u.role !== 'superadmin' ? `<button class="${u.deletion_access ? 'danger' : 'secondary'}" onclick="setDeletionAccess(${u.id}, ${!u.deletion_access})">${u.deletion_access ? 'Disable deletion' : 'Enable deletion'}</button>` : ''}</div>`).join('') || '<div class="empty">No users.</div>';
 }
 async function setDeletionAccess(id, enabled) {
   if (!await confirmAction({ title: `${enabled ? 'Enable' : 'Disable'} deletion access?`, message: enabled ? 'This user will be able to delete links, domains, and API keys.' : 'This user will immediately lose deletion access.', confirmLabel: enabled ? 'Enable access' : 'Disable access', danger: enabled })) return;
@@ -355,6 +356,7 @@ async function renderDashboard() {
   const results = await Promise.allSettled(tasks);
   const failed = results.find(r => r.status === 'rejected');
   if (failed) showMsg(failed.reason);
+  await routeView();
 }
 
 async function showDash() {

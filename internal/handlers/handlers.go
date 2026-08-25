@@ -62,6 +62,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/analytics", h.withAuth(h.analytics))
 	mux.HandleFunc("/api/v1/analytics/timeseries", h.withAuth(h.analyticsTimeseries))
 	mux.HandleFunc("/api/v1/analytics/breakdown", h.withAuth(h.analyticsBreakdown))
+	mux.HandleFunc("/api/v1/reports/links/", h.withAuth(h.linkReports))
+	mux.HandleFunc("/api/v1/reports/users/", h.withAuth(h.userReports))
 	mux.HandleFunc("/api/v1/clicks", h.withAuth(h.clicks))
 	mux.HandleFunc("/api/v1/tenants", h.withAuth(h.tenants))
 	mux.HandleFunc("/api/v1/domains", h.withAuth(h.domains))
@@ -180,7 +182,7 @@ func userAudit(u models.User) map[string]any {
 }
 
 func linkAudit(l models.Link) map[string]any {
-	return map[string]any{"id": l.ID, "slug": l.Slug, "target_url": l.TargetURL, "title": l.Title, "redirect_code": l.RedirectCode, "expires_at": l.ExpiresAt, "max_clicks": l.MaxClicks, "password_protected": l.PasswordProtected, "tags": l.Tags}
+	return map[string]any{"id": l.ID, "slug": l.Slug, "target_url": l.TargetURL, "title": l.Title, "visibility": l.Visibility, "redirect_code": l.RedirectCode, "expires_at": l.ExpiresAt, "max_clicks": l.MaxClicks, "password_protected": l.PasswordProtected, "tags": l.Tags}
 }
 
 func domainAudit(d models.TenantDomain) map[string]any {
@@ -453,6 +455,7 @@ type linkPayload struct {
 	TargetURL      *string             `json:"target_url"`
 	Slug           *string             `json:"slug"`
 	Title          *string             `json:"title"`
+	Visibility     *string             `json:"visibility"`
 	RedirectCode   *int                `json:"redirect_code"`
 	ExpiresAt      *string             `json:"expires_at"`
 	MaxClicks      *int64              `json:"max_clicks"`
@@ -488,7 +491,7 @@ func (h *Handler) links(w http.ResponseWriter, r *http.Request) {
 		if !decode(w, r, &in) {
 			return
 		}
-		link, passwordHash, _, err := applyLinkPayload(models.Link{ForwardQuery: true, RedirectCode: 302}, in, true)
+		link, passwordHash, _, err := applyLinkPayload(models.Link{ForwardQuery: true, RedirectCode: 302, Visibility: "private"}, in, true)
 		if err != nil {
 			errOut(w, http.StatusBadRequest, err.Error())
 			return
@@ -623,6 +626,15 @@ func applyLinkPayload(link models.Link, in linkPayload, creating bool) (models.L
 	if in.Title != nil {
 		link.Title = strings.TrimSpace(*in.Title)
 	}
+	if in.Visibility != nil {
+		link.Visibility = strings.TrimSpace(*in.Visibility)
+	}
+	if link.Visibility == "" {
+		link.Visibility = "private"
+	}
+	if link.Visibility != "private" && link.Visibility != "department" {
+		return link, nil, false, fmt.Errorf("visibility must be private or department")
+	}
 	if in.RedirectCode != nil {
 		link.RedirectCode = *in.RedirectCode
 	}
@@ -687,7 +699,7 @@ func applyLinkPayload(link models.Link, in linkPayload, creating bool) (models.L
 	return link, passwordHash, passwordChanged, nil
 }
 
-var csvLinkHeaders = []string{"slug", "url", "title", "redirect_code", "expires_at", "max_clicks", "expired_url", "ios_url", "android_url", "forward_query", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "tags", "geo_targets"}
+var csvLinkHeaders = []string{"slug", "url", "title", "visibility", "redirect_code", "expires_at", "max_clicks", "expired_url", "ios_url", "android_url", "forward_query", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "tags", "geo_targets"}
 
 func (h *Handler) exportLinks(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -714,7 +726,7 @@ func (h *Handler) exportLinks(w http.ResponseWriter, r *http.Request) {
 				maxClicks = strconv.FormatInt(*link.MaxClicks, 10)
 			}
 			geo, _ := json.Marshal(link.GeoTargets)
-			row := []string{link.Slug, link.TargetURL, link.Title, strconv.Itoa(link.RedirectCode), expiresAt, maxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, strconv.FormatBool(link.ForwardQuery), link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, strings.Join(link.Tags, ";"), string(geo)}
+			row := []string{link.Slug, link.TargetURL, link.Title, link.Visibility, strconv.Itoa(link.RedirectCode), expiresAt, maxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, strconv.FormatBool(link.ForwardQuery), link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, strings.Join(link.Tags, ";"), string(geo)}
 			for index := range row {
 				row[index] = safeCSVCell(row[index])
 			}
@@ -794,7 +806,10 @@ func (h *Handler) importLinks(w http.ResponseWriter, r *http.Request) {
 		if targetURLValue == "" {
 			targetURLValue = urlValue
 		}
-		link := models.Link{Slug: value(row, "slug"), TargetURL: targetURLValue, Title: value(row, "title"), RedirectCode: 302, ForwardQuery: true}
+		link := models.Link{Slug: value(row, "slug"), TargetURL: targetURLValue, Title: value(row, "title"), Visibility: value(row, "visibility"), RedirectCode: 302, ForwardQuery: true}
+		if link.Visibility == "" {
+			link.Visibility = "private"
+		}
 		if raw := value(row, "redirect_code"); raw != "" {
 			link.RedirectCode, _ = strconv.Atoi(raw)
 		}

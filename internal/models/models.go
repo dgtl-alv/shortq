@@ -59,6 +59,7 @@ type Link struct {
 	Slug              string      `json:"slug"`
 	TargetURL         string      `json:"target_url"`
 	Title             string      `json:"title"`
+	Visibility        string      `json:"visibility"`
 	ShortURL          string      `json:"short_url"`
 	Clicks            int64       `json:"clicks"`
 	RedirectCode      int         `json:"redirect_code"`
@@ -78,6 +79,7 @@ type Link struct {
 	PasswordProtected bool        `json:"password_protected"`
 	PasswordHash      []byte      `json:"-"`
 	CreatedAt         time.Time   `json:"created_at"`
+	DeletedAt         *time.Time  `json:"deleted_at,omitempty"`
 }
 
 type LinkPage struct {
@@ -138,4 +140,71 @@ type Analytics struct {
 	TodayClicks  int64 `json:"today_clicks"`
 	TotalTenants int64 `json:"total_tenants,omitempty"`
 	TotalUsers   int64 `json:"total_users,omitempty"`
+}
+
+type ReportSummary struct {
+	AllTimeClicks           int64    `json:"all_time_clicks"`
+	PeriodClicks            int64    `json:"period_clicks"`
+	HumanClicks             int64    `json:"human_clicks"`
+	BotClicks               int64    `json:"bot_clicks"`
+	EstimatedUniqueVisitors int64    `json:"estimated_unique_visitors"`
+	ExpiredAttempts         int64    `json:"expired_attempts"`
+	AverageClicksPerDay     float64  `json:"average_clicks_per_day"`
+	PeakDay                 string   `json:"peak_day,omitempty"`
+	PeakDayClicks           int64    `json:"peak_day_clicks"`
+	PreviousPeriodClicks    *int64   `json:"previous_period_clicks,omitempty"`
+	ChangePercent           *float64 `json:"change_percent,omitempty"`
+	ActiveLinks             int64    `json:"active_links,omitempty"`
+	DeletedLinks            int64    `json:"deleted_links,omitempty"`
+	PrivateLinks            int64    `json:"private_links,omitempty"`
+	SharedLinks             int64    `json:"shared_links,omitempty"`
+}
+
+type ReportDailyPoint struct {
+	Day    string `json:"day"`
+	Clicks int64  `json:"clicks"`
+	Human  int64  `json:"human_clicks"`
+	Bots   int64  `json:"bot_clicks"`
+}
+
+type ReportLinkRank struct {
+	ID            int64      `json:"id"`
+	Slug          string     `json:"slug"`
+	Title         string     `json:"title"`
+	Visibility    string     `json:"visibility"`
+	PeriodClicks  int64      `json:"period_clicks"`
+	AllTimeClicks int64      `json:"all_time_clicks"`
+	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
+}
+
+type SafeClickEvent struct {
+	ID           int64     `json:"id"`
+	LinkID       int64     `json:"link_id"`
+	Slug         string    `json:"slug"`
+	CountryCode  string    `json:"country_code"`
+	StatusCode   int       `json:"status_code"`
+	RouteType    string    `json:"route_type"`
+	Browser      string    `json:"browser"`
+	OS           string    `json:"os"`
+	Device       string    `json:"device"`
+	IsBot        bool      `json:"is_bot"`
+	ReferrerHost string    `json:"referrer_host"`
+	UTMSource    string    `json:"utm_source"`
+	UTMMedium    string    `json:"utm_medium"`
+	UTMCampaign  string    `json:"utm_campaign"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type AnalyticsReport struct {
+	Subject            map[string]any              `json:"subject"`
+	From               string                      `json:"from"`
+	To                 string                      `json:"to"`
+	Timezone           string                      `json:"timezone"`
+	DetailRetainedDays int                         `json:"detail_retained_days"`
+	UniqueIsEstimate   bool                        `json:"unique_is_estimate"`
+	Summary            ReportSummary               `json:"summary"`
+	Daily              []ReportDailyPoint          `json:"daily"`
+	Breakdowns         map[string][]AnalyticsPoint `json:"breakdowns"`
+	TopLinks           []ReportLinkRank            `json:"top_links,omitempty"`
+	RecentEvents       []SafeClickEvent            `json:"recent_events"`
 }

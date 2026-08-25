@@ -362,9 +362,9 @@ func (s *Store) RevokeAPIKey(uid, id int64, scope string) error {
 	return nil
 }
 
-const linkColumns = `id,user_id,tenant_id,slug,target_url,title,clicks,redirect_code,expires_at,max_clicks,
+const linkColumns = `id,user_id,tenant_id,slug,target_url,title,visibility,clicks,redirect_code,expires_at,max_clicks,
 COALESCE(expired_url,''),COALESCE(ios_url,''),COALESCE(android_url,''),forward_query,
-utm_source,utm_medium,utm_campaign,utm_term,utm_content,COALESCE(tags_json,'[]'),password_hash,created_at`
+utm_source,utm_medium,utm_campaign,utm_term,utm_content,COALESCE(tags_json,'[]'),password_hash,created_at,deleted_at`
 
 func (s *Store) CreateLink(u models.User, link models.Link, passwordHash []byte) (models.Link, error) {
 	if link.Slug == "" {
@@ -376,6 +376,9 @@ func (s *Store) CreateLink(u models.User, link models.Link, passwordHash []byte)
 	if link.RedirectCode == 0 {
 		link.RedirectCode = 302
 	}
+	if link.Visibility == "" {
+		link.Visibility = "private"
+	}
 	link.PasswordProtected = len(passwordHash) > 0
 	if err := validateLink(link); err != nil {
 		return models.Link{}, err
@@ -386,8 +389,8 @@ func (s *Store) CreateLink(u models.User, link models.Link, passwordHash []byte)
 		return models.Link{}, err
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`INSERT INTO links(user_id,tenant_id,slug,target_url,title,redirect_code,expires_at,max_clicks,expired_url,ios_url,android_url,password_hash,forward_query,utm_source,utm_medium,utm_campaign,utm_term,utm_content,tags_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		u.ID, u.TenantID, link.Slug, link.TargetURL, link.Title, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, passwordHash, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, tags)
+	res, err := tx.Exec(`INSERT INTO links(user_id,tenant_id,slug,target_url,title,visibility,redirect_code,expires_at,max_clicks,expired_url,ios_url,android_url,password_hash,forward_query,utm_source,utm_medium,utm_campaign,utm_term,utm_content,tags_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		u.ID, u.TenantID, link.Slug, link.TargetURL, link.Title, link.Visibility, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, passwordHash, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, tags)
 	if err != nil {
 		return models.Link{}, err
 	}
@@ -421,6 +424,9 @@ func (s *Store) CreateLinksBulk(u models.User, links []models.Link) ([]models.Li
 		if links[index].RedirectCode == 0 {
 			links[index].RedirectCode = 302
 		}
+		if links[index].Visibility == "" {
+			links[index].Visibility = "private"
+		}
 		if err := validateLink(links[index]); err != nil {
 			return nil, fmt.Errorf("row %d: %w", index+2, err)
 		}
@@ -430,7 +436,7 @@ func (s *Store) CreateLinksBulk(u models.User, links []models.Link) ([]models.Li
 		return nil, err
 	}
 	defer tx.Rollback()
-	insertStmt, err := tx.Prepare(`INSERT INTO links(user_id,tenant_id,slug,target_url,title,redirect_code,expires_at,max_clicks,expired_url,ios_url,android_url,forward_query,utm_source,utm_medium,utm_campaign,utm_term,utm_content,tags_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+	insertStmt, err := tx.Prepare(`INSERT INTO links(user_id,tenant_id,slug,target_url,title,visibility,redirect_code,expires_at,max_clicks,expired_url,ios_url,android_url,forward_query,utm_source,utm_medium,utm_campaign,utm_term,utm_content,tags_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return nil, err
 	}
@@ -443,7 +449,7 @@ func (s *Store) CreateLinksBulk(u models.User, links []models.Link) ([]models.Li
 	ids := make([]int64, 0, len(links))
 	for index, link := range links {
 		tags, _ := json.Marshal(normalizeTags(link.Tags))
-		res, err := insertStmt.Exec(u.ID, u.TenantID, link.Slug, link.TargetURL, link.Title, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, tags)
+		res, err := insertStmt.Exec(u.ID, u.TenantID, link.Slug, link.TargetURL, link.Title, link.Visibility, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, tags)
 		if err != nil {
 			return nil, fmt.Errorf("row %d: %w", index+2, err)
 		}
@@ -482,15 +488,9 @@ func (s *Store) ListLinksPage(u models.User, limit int, cursor int64) (models.Li
 }
 
 func (s *Store) listLinks(u models.User, limit int, cursor int64) ([]models.Link, error) {
-	q := `SELECT ` + linkColumns + ` FROM links WHERE 1=1`
+	q := `SELECT ` + linkColumns + ` FROM links WHERE deleted_at IS NULL`
 	args := []any{}
-	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
-		q += ` AND tenant_id=?`
-		args = append(args, *u.TenantID)
-	} else if u.Role == "customer" {
-		q += ` AND user_id=?`
-		args = append(args, u.ID)
-	}
+	q, args = addLinkViewScope(q, args, u, "links", false)
 	if cursor > 0 {
 		q += ` AND id<?`
 		args = append(args, cursor)
@@ -536,14 +536,8 @@ func (s *Store) LinksByIDs(u models.User, ids []int64) ([]models.Link, error) {
 		for _, id := range ids[start:end] {
 			args = append(args, id)
 		}
-		q := `SELECT ` + linkColumns + ` FROM links WHERE id IN (` + placeholders(end-start) + `)`
-		if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
-			q += ` AND tenant_id=?`
-			args = append(args, *u.TenantID)
-		} else if u.Role == "customer" {
-			q += ` AND user_id=?`
-			args = append(args, u.ID)
-		}
+		q := `SELECT ` + linkColumns + ` FROM links WHERE deleted_at IS NULL AND id IN (` + placeholders(end-start) + `)`
+		q, args = addLinkViewScope(q, args, u, "links", false)
 		rows, err := s.DB.Query(q, args...)
 		if err != nil {
 			return nil, err
@@ -600,14 +594,8 @@ func (s *Store) UpdateLinksBulk(u models.User, updates []LinkUpdate) ([]models.L
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	lockQ := `SELECT id FROM links WHERE id IN (` + placeholders(len(ids)) + `)`
-	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
-		lockQ += ` AND tenant_id=?`
-		args = append(args, *u.TenantID)
-	} else if u.Role == "customer" {
-		lockQ += ` AND user_id=?`
-		args = append(args, u.ID)
-	}
+	lockQ := `SELECT id FROM links WHERE deleted_at IS NULL AND id IN (` + placeholders(len(ids)) + `)`
+	lockQ, args = addLinkManageScope(lockQ, args, u, "links")
 	lockQ += ` FOR UPDATE`
 	rows, err := tx.Query(lockQ, args...)
 	if err != nil {
@@ -625,7 +613,7 @@ func (s *Store) UpdateLinksBulk(u models.User, updates []LinkUpdate) ([]models.L
 	if found != len(ids) {
 		return nil, sql.ErrNoRows
 	}
-	baseSQL := `UPDATE links SET target_url=?,title=?,redirect_code=?,expires_at=?,max_clicks=?,expired_url=?,ios_url=?,android_url=?,forward_query=?,utm_source=?,utm_medium=?,utm_campaign=?,utm_term=?,utm_content=?,tags_json=?`
+	baseSQL := `UPDATE links SET target_url=?,title=?,visibility=?,redirect_code=?,expires_at=?,max_clicks=?,expired_url=?,ios_url=?,android_url=?,forward_query=?,utm_source=?,utm_medium=?,utm_campaign=?,utm_term=?,utm_content=?,tags_json=?`
 	plainStmt, err := tx.Prepare(baseSQL + ` WHERE id=?`)
 	if err != nil {
 		return nil, err
@@ -649,7 +637,7 @@ func (s *Store) UpdateLinksBulk(u models.User, updates []LinkUpdate) ([]models.L
 	for _, update := range updates {
 		link := update.Link
 		tags, _ := json.Marshal(normalizeTags(link.Tags))
-		values := []any{link.TargetURL, link.Title, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, tags}
+		values := []any{link.TargetURL, link.Title, link.Visibility, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, tags}
 		if update.PasswordChanged {
 			values = append(values, update.PasswordHash, update.ID)
 			_, err = passwordStmt.Exec(values...)
@@ -676,7 +664,7 @@ func (s *Store) UpdateLinksBulk(u models.User, updates []LinkUpdate) ([]models.L
 }
 
 func (s *Store) LinkBySlug(slug string) (models.Link, error) {
-	row := s.DB.QueryRow(`SELECT `+linkColumns+` FROM links WHERE slug=?`, slug)
+	row := s.DB.QueryRow(`SELECT `+linkColumns+` FROM links WHERE slug=? AND deleted_at IS NULL`, slug)
 	l, err := scanLink(row)
 	if err != nil {
 		return l, err
@@ -704,35 +692,23 @@ func (s *Store) UpdateLink(u models.User, id int64, link models.Link, passwordHa
 		return models.Link{}, err
 	}
 	defer tx.Rollback()
-	checkQ := `SELECT id FROM links WHERE id=?`
+	checkQ := `SELECT id FROM links WHERE id=? AND deleted_at IS NULL`
 	checkArgs := []any{id}
-	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
-		checkQ += ` AND tenant_id=?`
-		checkArgs = append(checkArgs, *u.TenantID)
-	} else if u.Role == "customer" {
-		checkQ += ` AND user_id=?`
-		checkArgs = append(checkArgs, u.ID)
-	}
+	checkQ, checkArgs = addLinkManageScope(checkQ, checkArgs, u, "links")
 	checkQ += ` FOR UPDATE`
 	var scopedID int64
 	if err := tx.QueryRow(checkQ, checkArgs...).Scan(&scopedID); err != nil {
 		return models.Link{}, err
 	}
-	q := `UPDATE links SET target_url=?,title=?,redirect_code=?,expires_at=?,max_clicks=?,expired_url=?,ios_url=?,android_url=?,forward_query=?,utm_source=?,utm_medium=?,utm_campaign=?,utm_term=?,utm_content=?,tags_json=?`
-	args := []any{link.TargetURL, link.Title, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, tags}
+	q := `UPDATE links SET target_url=?,title=?,visibility=?,redirect_code=?,expires_at=?,max_clicks=?,expired_url=?,ios_url=?,android_url=?,forward_query=?,utm_source=?,utm_medium=?,utm_campaign=?,utm_term=?,utm_content=?,tags_json=?`
+	args := []any{link.TargetURL, link.Title, link.Visibility, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, tags}
 	if passwordChanged {
 		q += `,password_hash=?`
 		args = append(args, passwordHash)
 	}
-	q += ` WHERE id=?`
+	q += ` WHERE id=? AND deleted_at IS NULL`
 	args = append(args, id)
-	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
-		q += ` AND tenant_id=?`
-		args = append(args, *u.TenantID)
-	} else if u.Role == "customer" {
-		q += ` AND user_id=?`
-		args = append(args, u.ID)
-	}
+	q, args = addLinkManageScope(q, args, u, "links")
 	_, err = tx.Exec(q, args...)
 	if err != nil {
 		return models.Link{}, err
@@ -747,15 +723,9 @@ func (s *Store) UpdateLink(u models.User, id int64, link models.Link, passwordHa
 }
 
 func (s *Store) LinkByID(u models.User, id int64) (models.Link, error) {
-	q := `SELECT ` + linkColumns + ` FROM links WHERE id=?`
+	q := `SELECT ` + linkColumns + ` FROM links WHERE id=? AND deleted_at IS NULL`
 	args := []any{id}
-	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
-		q += ` AND tenant_id=?`
-		args = append(args, *u.TenantID)
-	} else if u.Role == "customer" {
-		q += ` AND user_id=?`
-		args = append(args, u.ID)
-	}
+	q, args = addLinkViewScope(q, args, u, "links", false)
 	l, err := scanLink(s.DB.QueryRow(q, args...))
 	if err != nil {
 		return l, err
@@ -768,15 +738,9 @@ func (s *Store) LinkByID(u models.User, id int64) (models.Link, error) {
 }
 
 func (s *Store) DeleteLink(u models.User, id int64) error {
-	q := `DELETE FROM links WHERE id=?`
+	q := `UPDATE links SET deleted_at=UTC_TIMESTAMP() WHERE id=? AND deleted_at IS NULL`
 	args := []any{id}
-	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
-		q += ` AND tenant_id=?`
-		args = append(args, *u.TenantID)
-	} else if u.Role == "customer" {
-		q += ` AND user_id=?`
-		args = append(args, u.ID)
-	}
+	q, args = addLinkManageScope(q, args, u, "links")
 	res, err := s.DB.Exec(q, args...)
 	if err != nil {
 		return err
@@ -791,18 +755,12 @@ func (s *Store) DeleteLinksBulk(u models.User, ids []int64) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	q := `DELETE FROM links WHERE id IN (` + placeholders(len(ids)) + `)`
+	q := `UPDATE links SET deleted_at=UTC_TIMESTAMP() WHERE deleted_at IS NULL AND id IN (` + placeholders(len(ids)) + `)`
 	args := make([]any, 0, len(ids)+1)
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
-		q += ` AND tenant_id=?`
-		args = append(args, *u.TenantID)
-	} else if u.Role == "customer" {
-		q += ` AND user_id=?`
-		args = append(args, u.ID)
-	}
+	q, args = addLinkManageScope(q, args, u, "links")
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return err
@@ -829,7 +787,7 @@ func (s *Store) RecordClick(event models.ClickEvent, increment bool, maxClicks *
 	}
 	defer tx.Rollback()
 	if increment {
-		q := `UPDATE links SET clicks=clicks+1 WHERE id=?`
+		q := `UPDATE links SET clicks=clicks+1 WHERE id=? AND deleted_at IS NULL`
 		args := []any{event.LinkID}
 		if maxClicks != nil {
 			q += ` AND clicks<?`
@@ -863,28 +821,16 @@ func (s *Store) PurgeOldClicks() error {
 
 func (s *Store) Analytics(u models.User) (models.Analytics, error) {
 	var a models.Analytics
-	where := ""
+	q := `SELECT COUNT(*),COALESCE(SUM(clicks),0) FROM links WHERE deleted_at IS NULL`
 	args := []any{}
-	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
-		where = " WHERE tenant_id=?"
-		args = append(args, *u.TenantID)
-	} else if u.Role == "customer" {
-		where = " WHERE user_id=?"
-		args = append(args, u.ID)
-	}
-	if err := s.DB.QueryRow(`SELECT COUNT(*),COALESCE(SUM(clicks),0) FROM links`+where, args...).Scan(&a.TotalLinks, &a.TotalClicks); err != nil {
+	q, args = addLinkViewScope(q, args, u, "links", false)
+	if err := s.DB.QueryRow(q, args...).Scan(&a.TotalLinks, &a.TotalClicks); err != nil {
 		return a, err
 	}
-	clickWhere := ""
+	clickQ := `SELECT COUNT(*) FROM clicks c JOIN links l ON l.id=c.link_id WHERE l.deleted_at IS NULL AND DATE(c.created_at)=CURRENT_DATE()`
 	clickArgs := []any{}
-	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
-		clickWhere = " AND l.tenant_id=?"
-		clickArgs = append(clickArgs, *u.TenantID)
-	} else if u.Role == "customer" {
-		clickWhere = " AND l.user_id=?"
-		clickArgs = append(clickArgs, u.ID)
-	}
-	_ = s.DB.QueryRow(`SELECT COUNT(*) FROM clicks c JOIN links l ON l.id=c.link_id WHERE DATE(c.created_at)=CURRENT_DATE()`+clickWhere, clickArgs...).Scan(&a.TodayClicks)
+	clickQ, clickArgs = addLinkViewScope(clickQ, clickArgs, u, "l", false)
+	_ = s.DB.QueryRow(clickQ, clickArgs...).Scan(&a.TodayClicks)
 	if u.Role == "superadmin" {
 		_ = s.DB.QueryRow(`SELECT COUNT(*) FROM tenants`).Scan(&a.TotalTenants)
 		_ = s.DB.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&a.TotalUsers)
@@ -901,7 +847,7 @@ func (s *Store) ListClicks(u models.User, values url.Values) (models.ClickPage, 
 		}
 		limit = parsed
 	}
-	q := `SELECT c.id,c.link_id,l.slug,c.ip,c.country_code,c.method,c.status_code,COALESCE(c.resolved_url,''),c.route_type,c.user_agent,c.browser,c.os,c.device,c.is_bot,c.referrer,c.referrer_host,c.utm_source,c.utm_medium,c.utm_campaign,c.created_at FROM clicks c JOIN links l ON l.id=c.link_id WHERE 1=1`
+	q := `SELECT c.id,c.link_id,l.slug,c.ip,c.country_code,c.method,c.status_code,COALESCE(c.resolved_url,''),c.route_type,c.user_agent,c.browser,c.os,c.device,c.is_bot,c.referrer,c.referrer_host,c.utm_source,c.utm_medium,c.utm_campaign,c.created_at FROM clicks c JOIN links l ON l.id=c.link_id WHERE l.deleted_at IS NULL`
 	args := []any{}
 	q, args = addLinkScope(q, args, u, "l")
 	if raw := values.Get("link_id"); raw != "" {
@@ -971,7 +917,7 @@ func (s *Store) ListClicks(u models.User, values url.Values) (models.ClickPage, 
 }
 
 func (s *Store) AnalyticsTimeseries(u models.User, values url.Values) ([]models.AnalyticsPoint, error) {
-	q := `SELECT DATE_FORMAT(r.day,'%Y-%m-%d'),COALESCE(SUM(r.clicks),0) FROM click_rollups_daily r JOIN links l ON l.id=r.link_id WHERE 1=1`
+	q := `SELECT DATE_FORMAT(r.day,'%Y-%m-%d'),COALESCE(SUM(r.clicks),0) FROM click_rollups_daily r JOIN links l ON l.id=r.link_id WHERE l.deleted_at IS NULL`
 	args := []any{}
 	q, args = addLinkScope(q, args, u, "l")
 	if value := values.Get("link_id"); value != "" {
@@ -1003,7 +949,7 @@ func (s *Store) AnalyticsBreakdown(u models.User, dimension string, values url.V
 	if !ok {
 		return nil, errors.New("group_by must be country, device, browser, referrer, campaign, route or status")
 	}
-	q := `SELECT COALESCE(NULLIF(` + column + `,''),'unknown'),COALESCE(SUM(r.clicks),0) FROM click_rollups_daily r JOIN links l ON l.id=r.link_id WHERE 1=1`
+	q := `SELECT COALESCE(NULLIF(` + column + `,''),'unknown'),COALESCE(SUM(r.clicks),0) FROM click_rollups_daily r JOIN links l ON l.id=r.link_id WHERE l.deleted_at IS NULL`
 	args := []any{}
 	q, args = addLinkScope(q, args, u, "l")
 	if value := values.Get("link_id"); value != "" {
@@ -1069,7 +1015,31 @@ func parseDateRange(values url.Values) (string, string, error) {
 }
 
 func addLinkScope(q string, args []any, u models.User, alias string) (string, []any) {
-	if u.Role == "tenant" || (u.Role == "customer" && u.TenantID != nil) {
+	return addLinkViewScope(q, args, u, alias, false)
+}
+
+func addLinkViewScope(q string, args []any, u models.User, alias string, includeDeleted bool) (string, []any) {
+	if u.Role == "tenant" {
+		q += ` AND ` + alias + `.tenant_id=?`
+		args = append(args, *u.TenantID)
+	} else if u.Role == "customer" {
+		if u.TenantID != nil {
+			deletedClause := ` AND ` + alias + `.deleted_at IS NULL`
+			if includeDeleted {
+				deletedClause = ""
+			}
+			q += ` AND (` + alias + `.user_id=? OR (` + alias + `.tenant_id=? AND ` + alias + `.visibility='department'` + deletedClause + `))`
+			args = append(args, u.ID, *u.TenantID)
+		} else {
+			q += ` AND ` + alias + `.user_id=?`
+			args = append(args, u.ID)
+		}
+	}
+	return q, args
+}
+
+func addLinkManageScope(q string, args []any, u models.User, alias string) (string, []any) {
+	if u.Role == "tenant" {
 		q += ` AND ` + alias + `.tenant_id=?`
 		args = append(args, *u.TenantID)
 	} else if u.Role == "customer" {
@@ -1102,9 +1072,10 @@ func scanLink(row linkScanner) (models.Link, error) {
 	var tid sql.NullInt64
 	var expires sql.NullTime
 	var maxClicks sql.NullInt64
+	var deleted sql.NullTime
 	var tags []byte
-	err := row.Scan(&l.ID, &l.UserID, &tid, &l.Slug, &l.TargetURL, &l.Title, &l.Clicks, &l.RedirectCode, &expires, &maxClicks,
-		&l.ExpiredURL, &l.IOSURL, &l.AndroidURL, &l.ForwardQuery, &l.UTMSource, &l.UTMMedium, &l.UTMCampaign, &l.UTMTerm, &l.UTMContent, &tags, &l.PasswordHash, &l.CreatedAt)
+	err := row.Scan(&l.ID, &l.UserID, &tid, &l.Slug, &l.TargetURL, &l.Title, &l.Visibility, &l.Clicks, &l.RedirectCode, &expires, &maxClicks,
+		&l.ExpiredURL, &l.IOSURL, &l.AndroidURL, &l.ForwardQuery, &l.UTMSource, &l.UTMMedium, &l.UTMCampaign, &l.UTMTerm, &l.UTMContent, &tags, &l.PasswordHash, &l.CreatedAt, &deleted)
 	if tid.Valid {
 		l.TenantID = &tid.Int64
 	}
@@ -1113,6 +1084,9 @@ func scanLink(row linkScanner) (models.Link, error) {
 	}
 	if maxClicks.Valid {
 		l.MaxClicks = &maxClicks.Int64
+	}
+	if deleted.Valid {
+		l.DeletedAt = &deleted.Time
 	}
 	_ = json.Unmarshal(tags, &l.Tags)
 	if l.Tags == nil {
@@ -1186,6 +1160,12 @@ func replaceGeoTargets(tx *sql.Tx, linkID int64, targets []models.GeoTarget) err
 }
 
 func validateLink(link models.Link) error {
+	if link.Visibility == "" {
+		link.Visibility = "private"
+	}
+	if link.Visibility != "private" && link.Visibility != "department" {
+		return errors.New("visibility must be private or department")
+	}
 	if err := validHTTPURL(link.TargetURL); err != nil {
 		return fmt.Errorf("target_url: %w", err)
 	}

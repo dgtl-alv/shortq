@@ -30,12 +30,16 @@ Change both before production.
 - Role model: `superadmin`, `tenant` (department admin), `customer` (department user)
 - Superadmin manages ALVA users and domains; additional departments are disabled
 - Department admins manage users under same department
-- Department users can create, edit, delete, list, and view analytics for every link in their own department
+- Department users manage their own links and can view links explicitly shared with the ALVA department
 - Department users must have deletion access activated by a superadmin before deleting links or domains or revoking API keys; superadmins always retain deletion access.
 - Administrative writes and denied deletion attempts are retained in the superadmin audit log for 365 days.
 - All departments use the same shortened domain, for example `https://s.alvaauto.com/<slug>`; `/r/<slug>` remains backward compatible
 - Slugs are globally unique across all departments because shared domain has no department path segment
-- Role-scoped analytics at `/api/v1/analytics`
+- Private-by-default link dashboards with optional read-only sharing across the ALVA department
+- Comprehensive per-link and per-user reports with local-time charts, human/bot and routing breakdowns, privacy-safe event tables, and summary/event CSV downloads
+- Detailed click reporting for the latest 90 days; all-time counters remain available
+- Soft-deleted links stop redirecting but keep their analytics and reserve their slugs
+- Role-scoped overview analytics at `/api/v1/analytics` and detailed reports at `/api/v1/reports`
 - Offline API docs page at `/docs`, OpenAPI YAML at `/docs/openapi.yaml`
 - Health check at `/healthz`
 

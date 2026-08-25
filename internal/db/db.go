@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS links (
   slug VARCHAR(80) NOT NULL UNIQUE,
   target_url TEXT NOT NULL,
   title VARCHAR(180) NOT NULL DEFAULT '',
+  visibility ENUM('private','department') NOT NULL DEFAULT 'private',
   clicks BIGINT NOT NULL DEFAULT 0,
   redirect_code SMALLINT NOT NULL DEFAULT 302,
   expires_at DATETIME NULL,
@@ -135,6 +136,7 @@ CREATE TABLE IF NOT EXISTS links (
   tags_json TEXT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL
 );
@@ -215,6 +217,8 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 		{"links", "utm_term", "VARCHAR(255) NOT NULL DEFAULT ''"},
 		{"links", "utm_content", "VARCHAR(255) NOT NULL DEFAULT ''"},
 		{"links", "tags_json", "TEXT NULL"},
+		{"links", "visibility", "ENUM('private','department') NOT NULL DEFAULT 'private'"},
+		{"links", "deleted_at", "TIMESTAMP NULL"},
 		{"clicks", "country_code", "CHAR(2) NOT NULL DEFAULT ''"},
 		{"clicks", "method", "VARCHAR(10) NOT NULL DEFAULT 'GET'"},
 		{"clicks", "status_code", "SMALLINT NOT NULL DEFAULT 302"},
@@ -237,6 +241,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 	indexes := []struct{ table, name, columns string }{
 		{"links", "idx_links_tenant_id", "tenant_id,id"},
 		{"links", "idx_links_user_id", "user_id,id"},
+		{"links", "idx_links_visibility", "tenant_id,visibility,deleted_at,id"},
 		{"clicks", "idx_clicks_created_at", "created_at"},
 		{"clicks", "idx_clicks_link_created", "link_id,created_at"},
 		{"clicks", "idx_clicks_country_created", "country_code,created_at,id"},
@@ -248,7 +253,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 			return err
 		}
 	}
-	_, err = db.Exec(`INSERT IGNORE INTO schema_migrations(version) VALUES(2),(3)`)
+	_, err = db.Exec(`INSERT IGNORE INTO schema_migrations(version) VALUES(2),(3),(4)`)
 	return err
 }
 
