@@ -4,8 +4,10 @@ info:
   version: 2.2.0
   description: ShortQ technical API. Link slugs are immutable after creation. Dynamic routing never uses permanent redirects. Cursor pagination and transactional bulk operations support large link sets. Raw click IPs are retained for 90 days; daily aggregates remain available.
 servers:
-  - url: https://s.ilectraev.com
+  - url: https://s.alvaauto.com
     description: Production
+  - url: https://s.ilectraev.com
+    description: Development server 54
   - url: http://localhost:8080
     description: Local development
 security:
