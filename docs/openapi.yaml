@@ -11,6 +11,7 @@ servers:
 security:
   - bearerAuth: []
   - apiKeyAuth: []
+  - shortioApiKeyAuth: []
 paths:
   /healthz:
     get:
@@ -197,6 +198,24 @@ paths:
       description: Verifies the configured CNAME or `_shortq` TXT record and activates the domain.
       parameters: [{name: id, in: path, required: true, schema: {type: integer}}]
       responses: {'200': {description: Domain activated}, '400': {description: DNS not verified}}
+  /links:
+    post:
+      description: Short.io-compatible create-link endpoint for config-only client switches. Uses `Authorization: APIKEY` and maps `originalURL` to ShortQ `target_url`, `path` to `slug`, and `domain` to an active tenant domain.
+      security:
+        - shortioApiKeyAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ShortioLinkWrite'}}}
+      responses: {'200': {description: Short.io-shaped link response, content: {application/json: {schema: {$ref: '#/components/schemas/ShortioLink'}}}}, '400': {description: Invalid payload}, '404': {description: Domain not found in caller scope}, '409': {description: Slug collision}}
+  /links/{link_id}:
+    delete:
+      description: Short.io-compatible delete-link endpoint. Accepts the `idString` returned by `POST /links`, for example `lnk_shortq_123`, and also accepts numeric ShortQ IDs.
+      security:
+        - shortioApiKeyAuth: []
+        - apiKeyAuth: []
+      parameters: [{name: link_id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Deleted, content: {application/json: {schema: {type: object, properties: {success: {type: boolean}, id: {type: string}, idString: {type: string}}}}}}, '403': {description: Deletion access required}, '404': {description: Link not found}}
   /api/v1/links:
     get:
       description: Backward-compatible unpaginated list. New integrations should use `/api/v1/links/page`.
@@ -324,6 +343,7 @@ components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
     apiKeyAuth: {type: apiKey, in: header, name: X-API-Key}
+    shortioApiKeyAuth: {type: apiKey, in: header, name: Authorization}
   requestBodies:
     Register:
       content:
@@ -437,6 +457,47 @@ components:
         geo_targets: {type: array, items: {$ref: '#/components/schemas/GeoTarget'}}
         password: {type: string, minLength: 8, writeOnly: true}
         clear_password: {type: boolean}
+    ShortioLinkWrite:
+      type: object
+      required: [originalURL, domain]
+      properties:
+        originalURL: {type: string, format: uri}
+        domain: {type: string}
+        path: {type: string, nullable: true}
+        title: {type: string}
+        tags: {type: array, items: {type: string}}
+        redirectType: {type: integer, enum: [301, 302, 307, 308], nullable: true}
+        expiresAt: {oneOf: [{type: string}, {type: number}], description: RFC3339, YYYY-MM-DD, or milliseconds.}
+        ttl: {oneOf: [{type: string}, {type: number}], description: RFC3339, YYYY-MM-DD, or milliseconds.}
+        expiredURL: {type: string, format: uri, nullable: true}
+        androidURL: {type: string, format: uri, nullable: true}
+        iphoneURL: {type: string, format: uri, nullable: true}
+        clicksLimit: {type: integer, minimum: 1, nullable: true}
+        skipQS: {type: boolean}
+        password: {type: string, minLength: 8}
+        utmSource: {type: string}
+        utmMedium: {type: string}
+        utmCampaign: {type: string}
+        utmTerm: {type: string}
+        utmContent: {type: string}
+        allowDuplicates: {type: boolean}
+    ShortioLink:
+      type: object
+      properties:
+        originalURL: {type: string, format: uri}
+        path: {type: string}
+        id: {type: string}
+        idString: {type: string}
+        shortURL: {type: string, format: uri}
+        secureShortURL: {type: string, format: uri}
+        tags: {type: array, items: {type: string}}
+        createdAt: {type: string, format: date-time}
+        skipQS: {type: boolean}
+        archived: {type: boolean}
+        hasPassword: {type: boolean}
+        source: {type: string}
+        success: {type: boolean}
+        duplicate: {type: boolean}
     Link:
       type: object
       required: [id, user_id, slug, target_url, title, visibility, short_url, clicks, redirect_code, forward_query, tags, geo_targets, password_protected, created_at]

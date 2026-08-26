@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"shortq/internal/models"
 )
@@ -47,5 +48,64 @@ func TestAPIKeyCreationRequiresName(t *testing.T) {
 	h.apiKeys(res, req)
 	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "1 to 120") {
 		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+}
+
+func TestShortioLinkIDParsing(t *testing.T) {
+	for _, raw := range []string{"42", "lnk_shortq_42", "lnk_anything_42"} {
+		got, err := parseShortioLinkID(raw)
+		if err != nil || got != 42 {
+			t.Fatalf("parseShortioLinkID(%q) = %d, %v; want 42, nil", raw, got, err)
+		}
+	}
+}
+
+func TestShortioTimeParsing(t *testing.T) {
+	got, err := parseShortioTime("2026-08-26T10:30:00Z")
+	if err != nil || got != "2026-08-26T10:30:00Z" {
+		t.Fatalf("RFC3339 parse = %q, %v", got, err)
+	}
+	got, err = parseShortioTime(float64(1798260000000))
+	if err != nil {
+		t.Fatalf("millis parse error: %v", err)
+	}
+	if _, err := time.Parse(time.RFC3339, got); err != nil {
+		t.Fatalf("millis result is not RFC3339: %q", got)
+	}
+}
+
+func TestShortioPayloadMapping(t *testing.T) {
+	h := &Handler{}
+	skip := true
+	redirect := 302
+	limit := int64(5)
+	path := "campaign"
+	android := "https://play.google.com/store/apps/details?id=com.example"
+	iphone := "https://apps.apple.com/app/example/id123"
+	expired := "https://example.org/expired"
+	password := "secret-password"
+	link, passwordHash, err := h.shortioCreatePayloadToLink(shortioCreateLinkPayload{
+		OriginalURL:  "https://example.org/destination",
+		Path:         &path,
+		Title:        "Campaign",
+		RedirectType: &redirect,
+		ExpiresAt:    "2026-08-26T10:30:00Z",
+		ExpiredURL:   &expired,
+		AndroidURL:   &android,
+		IPhoneURL:    &iphone,
+		ClicksLimit:  &limit,
+		SkipQS:       &skip,
+		Password:     &password,
+		Tags:         []string{"team", "sms"},
+		UTMSource:    "crm",
+	})
+	if err != nil {
+		t.Fatalf("payload mapping failed: %v", err)
+	}
+	if link.TargetURL != "https://example.org/destination" || link.Slug != "campaign" || link.IOSURL != iphone || link.AndroidURL != android || link.ExpiredURL != expired {
+		t.Fatalf("mapped link mismatch: %#v", link)
+	}
+	if link.ForwardQuery || link.MaxClicks == nil || *link.MaxClicks != 5 || link.UTMSource != "crm" || len(passwordHash) == 0 {
+		t.Fatalf("advanced mapping mismatch: %#v hash=%d", link, len(passwordHash))
 	}
 }

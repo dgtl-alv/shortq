@@ -80,6 +80,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/qr", h.qr)
 	mux.HandleFunc("/api/v1/api-keys", h.withAuth(h.apiKeys))
 	mux.HandleFunc("/api/v1/api-keys/", h.withAuth(h.apiKeyByID))
+	mux.HandleFunc("/links", h.withAuth(h.shortioLinks))
+	mux.HandleFunc("/links/", h.withAuth(h.shortioLinkByID))
 	mux.HandleFunc("/r/", h.redirectLegacy)
 	mux.HandleFunc("/", h.web)
 	return securityHeaders(logReq(mux))
@@ -609,6 +611,248 @@ func (h *Handler) linkByID(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 	}
 }
+
+type shortioCreateLinkPayload struct {
+	OriginalURL     string   `json:"originalURL"`
+	Domain          string   `json:"domain"`
+	Path            *string  `json:"path"`
+	Title           string   `json:"title"`
+	Tags            []string `json:"tags"`
+	RedirectType    *int     `json:"redirectType"`
+	ExpiresAt       any      `json:"expiresAt"`
+	TTL             any      `json:"ttl"`
+	ExpiredURL      *string  `json:"expiredURL"`
+	AndroidURL      *string  `json:"androidURL"`
+	IPhoneURL       *string  `json:"iphoneURL"`
+	ClicksLimit     *int64   `json:"clicksLimit"`
+	SkipQS          *bool    `json:"skipQS"`
+	Password        *string  `json:"password"`
+	UTMSource       string   `json:"utmSource"`
+	UTMMedium       string   `json:"utmMedium"`
+	UTMCampaign     string   `json:"utmCampaign"`
+	UTMTerm         string   `json:"utmTerm"`
+	UTMContent      string   `json:"utmContent"`
+	AllowDuplicates bool     `json:"allowDuplicates"`
+}
+
+func (h *Handler) shortioLinks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var in shortioCreateLinkPayload
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errOut(w, http.StatusBadRequest, "bad json")
+		return
+	}
+	link, passwordHash, err := h.shortioCreatePayloadToLink(in)
+	if err != nil {
+		errOut(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	u, _ := userFrom(r.Context())
+	if err := h.ensureShortioDomainAllowed(u, in.Domain); err != nil {
+		errOut(w, http.StatusNotFound, err.Error())
+		return
+	}
+	created, err := h.S.CreateLink(u, link, passwordHash)
+	if err != nil {
+		if link.Slug != "" {
+			if existing, lookupErr := h.S.LinkBySlug(link.Slug); lookupErr == nil && existing.TargetURL == link.TargetURL {
+				existing.ShortURL = h.shortURL(existing)
+				jsonOut(w, http.StatusOK, h.shortioLinkResponse(existing, in.Domain, true))
+				return
+			}
+		}
+		errOut(w, http.StatusConflict, err.Error())
+		return
+	}
+	created.ShortURL = h.shortURL(created)
+	if err := h.audit(r, "shortio.link.created", "link", strconv.FormatInt(created.ID, 10), "success", nil, linkAudit(created)); err != nil {
+		errOut(w, http.StatusInternalServerError, "audit log unavailable")
+		return
+	}
+	jsonOut(w, http.StatusOK, h.shortioLinkResponse(created, in.Domain, false))
+}
+
+func (h *Handler) shortioLinkByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	id, err := parseShortioLinkID(strings.TrimPrefix(r.URL.Path, "/links/"))
+	if err != nil {
+		errOut(w, http.StatusBadRequest, "invalid link_id")
+		return
+	}
+	if !h.requireDelete(w, r, "shortio.link.deleted", "link", strconv.FormatInt(id, 10)) {
+		return
+	}
+	u, _ := userFrom(r.Context())
+	before, err := h.S.LinkByID(u, id)
+	if err != nil {
+		errOut(w, http.StatusNotFound, "link not found")
+		return
+	}
+	if err := h.S.DeleteLink(u, id); err != nil {
+		errOut(w, http.StatusNotFound, "link not found")
+		return
+	}
+	if err := h.audit(r, "shortio.link.deleted", "link", strconv.FormatInt(id, 10), "success", linkAudit(before), nil); err != nil {
+		errOut(w, http.StatusInternalServerError, "audit log unavailable")
+		return
+	}
+	jsonOut(w, http.StatusOK, map[string]any{"success": true, "id": shortioLinkID(id), "idString": shortioLinkID(id)})
+}
+
+func (h *Handler) shortioCreatePayloadToLink(in shortioCreateLinkPayload) (models.Link, []byte, error) {
+	payload := linkPayload{
+		URL:          stringPtr(in.OriginalURL),
+		Title:        stringPtr(in.Title),
+		RedirectCode: in.RedirectType,
+		MaxClicks:    in.ClicksLimit,
+		Tags:         &in.Tags,
+		UTMSource:    stringPtr(in.UTMSource),
+		UTMMedium:    stringPtr(in.UTMMedium),
+		UTMCampaign:  stringPtr(in.UTMCampaign),
+		UTMTerm:      stringPtr(in.UTMTerm),
+		UTMContent:   stringPtr(in.UTMContent),
+		Password:     in.Password,
+	}
+	if in.Path != nil {
+		payload.Slug = stringPtr(strings.Trim(*in.Path, "/"))
+	}
+	if in.ExpiredURL != nil {
+		payload.ExpiredURL = in.ExpiredURL
+	}
+	if in.AndroidURL != nil {
+		payload.AndroidURL = in.AndroidURL
+	}
+	if in.IPhoneURL != nil {
+		payload.IOSURL = in.IPhoneURL
+	}
+	if in.SkipQS != nil {
+		forward := !*in.SkipQS
+		payload.ForwardQuery = &forward
+	}
+	expires, err := parseShortioTime(firstNonNil(in.ExpiresAt, in.TTL))
+	if err != nil {
+		return models.Link{}, nil, err
+	}
+	if expires != "" {
+		payload.ExpiresAt = &expires
+	}
+	link, passwordHash, _, err := applyLinkPayload(models.Link{ForwardQuery: true, RedirectCode: 302, Visibility: "private"}, payload, true)
+	return link, passwordHash, err
+}
+
+func (h *Handler) ensureShortioDomainAllowed(u models.User, domain string) error {
+	domain = strings.TrimSpace(domain)
+	if domain == "" {
+		return fmt.Errorf("domain is required")
+	}
+	d, err := h.S.TenantDomainByDomain(domain)
+	if err != nil || d.Status != "active" {
+		return fmt.Errorf("domain not found")
+	}
+	if u.TenantID == nil || d.TenantID != *u.TenantID {
+		return fmt.Errorf("domain not found")
+	}
+	return nil
+}
+
+func (h *Handler) shortioLinkResponse(link models.Link, domain string, duplicate bool) map[string]any {
+	id := shortioLinkID(link.ID)
+	if strings.TrimSpace(domain) == "" {
+		if parsed, err := url.Parse(link.ShortURL); err == nil {
+			domain = parsed.Hostname()
+		}
+	}
+	return map[string]any{
+		"originalURL":    link.TargetURL,
+		"path":           link.Slug,
+		"id":             id,
+		"idString":       id,
+		"shortURL":       link.ShortURL,
+		"secureShortURL": link.ShortURL,
+		"cloaking":       false,
+		"tags":           link.Tags,
+		"createdAt":      link.CreatedAt.UTC().Format(time.RFC3339Nano),
+		"skipQS":         !link.ForwardQuery,
+		"archived":       false,
+		"DomainId":       0,
+		"OwnerId":        link.UserID,
+		"hasPassword":    link.PasswordProtected,
+		"source":         "api",
+		"success":        true,
+		"duplicate":      duplicate,
+		"domain":         strings.TrimSpace(domain),
+	}
+}
+
+func shortioLinkID(id int64) string { return fmt.Sprintf("lnk_shortq_%d", id) }
+
+func parseShortioLinkID(raw string) (int64, error) {
+	raw = strings.TrimSpace(strings.Trim(raw, "/"))
+	if raw == "" || strings.Contains(raw, "/") {
+		return 0, fmt.Errorf("invalid link id")
+	}
+	if strings.HasPrefix(raw, "lnk_shortq_") {
+		raw = strings.TrimPrefix(raw, "lnk_shortq_")
+	} else if strings.HasPrefix(raw, "lnk_") {
+		last := strings.LastIndex(raw, "_")
+		if last < 0 || last == len(raw)-1 {
+			return 0, fmt.Errorf("invalid link id")
+		}
+		raw = raw[last+1:]
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id < 1 {
+		return 0, fmt.Errorf("invalid link id")
+	}
+	return id, nil
+}
+
+func parseShortioTime(value any) (string, error) {
+	switch v := value.(type) {
+	case nil:
+		return "", nil
+	case string:
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return "", nil
+		}
+		if millis, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return time.UnixMilli(millis).UTC().Format(time.RFC3339), nil
+		}
+		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+			return parsed.UTC().Format(time.RFC3339), nil
+		}
+		if parsed, err := time.Parse("2006-01-02", v); err == nil {
+			return parsed.UTC().Format(time.RFC3339), nil
+		}
+		return "", fmt.Errorf("expiresAt/ttl must be milliseconds, RFC3339, or YYYY-MM-DD")
+	case float64:
+		if v <= 0 {
+			return "", nil
+		}
+		return time.UnixMilli(int64(v)).UTC().Format(time.RFC3339), nil
+	default:
+		return "", fmt.Errorf("expiresAt/ttl must be milliseconds, RFC3339, or YYYY-MM-DD")
+	}
+}
+
+func firstNonNil(values ...any) any {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func stringPtr(value string) *string { return &value }
 
 func applyLinkPayload(link models.Link, in linkPayload, creating bool) (models.Link, []byte, bool, error) {
 	if in.URL != nil && in.TargetURL != nil && strings.TrimSpace(*in.URL) != strings.TrimSpace(*in.TargetURL) {
@@ -1583,7 +1827,7 @@ func (h *Handler) recordRedirectEvent(r *http.Request, l models.Link, target, ro
 
 func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if key := r.Header.Get("X-API-Key"); key != "" {
+		if key := apiKeyFromRequest(r); key != "" {
 			u, scope, err := h.S.UserByAPIKey(auth.SHA256Hex(key))
 			if err == nil && u.Active && h.allowedMicrosoftUser(u.Email) {
 				mode := defaultDashboardMode(u)
@@ -1593,6 +1837,8 @@ func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {
 				next(w, r.WithContext(withPrincipal(r.Context(), effectivePrincipal(u, mode, "api_key"))))
 				return
 			}
+			errOut(w, http.StatusUnauthorized, "auth required")
+			return
 		}
 		if p, ok := h.userFromSession(r); ok {
 			next(w, r.WithContext(withPrincipal(r.Context(), p)))
@@ -1611,6 +1857,17 @@ func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r.WithContext(withPrincipal(r.Context(), effectivePrincipal(u, c.Mode, "bearer"))))
 	}
+}
+
+func apiKeyFromRequest(r *http.Request) string {
+	if key := strings.TrimSpace(r.Header.Get("X-API-Key")); key != "" {
+		return key
+	}
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authHeader == "" || strings.HasPrefix(authHeader, "Bearer ") {
+		return ""
+	}
+	return authHeader
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
