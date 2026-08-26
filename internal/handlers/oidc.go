@@ -31,6 +31,10 @@ type microsoftClaims struct {
 }
 
 func (h *Handler) microsoftLogin(w http.ResponseWriter, r *http.Request) {
+	if h.C.DevAuthBypass {
+		h.devAuthLogin(w, r)
+		return
+	}
 	cfg, err := h.oauthConfig(r.Context())
 	if err != nil {
 		errOut(w, 500, "sso not configured")
@@ -119,8 +123,28 @@ func (h *Handler) microsoftCallback(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) microsoftLogout(w http.ResponseWriter, r *http.Request) {
 	clearCookie(w, sessionCookie)
+	if h.C.DevAuthBypass {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
 	logoutURL := fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/logout?post_logout_redirect_uri=%s", url.PathEscape(h.C.OIDCTenantID), url.QueryEscape(h.C.BaseURL))
 	http.Redirect(w, r, logoutURL, http.StatusFound)
+}
+
+func (h *Handler) devAuthLogin(w http.ResponseWriter, r *http.Request) {
+	email := strings.ToLower(strings.TrimSpace(h.C.DevAuthEmail))
+	if email == "" {
+		errOut(w, 500, "dev auth not configured")
+		return
+	}
+	u, _, err := h.S.UserByEmail(email)
+	if err != nil {
+		errOut(w, 500, "dev auth user unavailable")
+		return
+	}
+	signed, _ := auth.SignJWT(h.C.JWTSecret, auth.Claims{UserID: u.ID, Email: u.Email, Mode: defaultDashboardMode(u), Exp: auth.TokenTTL()})
+	setSessionCookie(w, signed)
+	http.Redirect(w, r, "/#app", http.StatusFound)
 }
 
 func (h *Handler) oauthConfig(ctx context.Context) (*oauth2.Config, error) {
@@ -181,10 +205,17 @@ func (h *Handler) userFromSession(r *http.Request) (principal, bool) {
 		return principal{}, false
 	}
 	u, err := h.S.UserByID(claims.UserID)
-	if err != nil || !u.Active || !h.allowedMicrosoftUser(u.Email) {
+	if err != nil || !u.Active {
+		return principal{}, false
+	}
+	if !h.allowedMicrosoftUser(u.Email) && !h.devAuthAllows(u.Email) {
 		return principal{}, false
 	}
 	return effectivePrincipal(u, claims.Mode, "session"), true
+}
+
+func (h *Handler) devAuthAllows(email string) bool {
+	return h.C.DevAuthBypass && strings.EqualFold(strings.TrimSpace(email), strings.TrimSpace(h.C.DevAuthEmail))
 }
 
 func setTemporaryCookie(w http.ResponseWriter, name, value string) {
