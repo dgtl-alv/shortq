@@ -33,7 +33,7 @@ Change both before production.
 - Department users manage their own links and can view links explicitly shared with the ALVA department
 - Department users must have deletion access activated by a superadmin before deleting links or domains or revoking API keys; superadmins always retain deletion access.
 - Administrative writes and denied deletion attempts are retained in the superadmin audit log for 365 days.
-- All departments use the same shortened domain, for example `https://s.alvaauto.com/<slug>`; `/r/<slug>` remains backward compatible
+- All departments use the same shortened domain, for example `https://s.ilectraev.com/<slug>`; `/r/<slug>` remains backward compatible
 - Slugs are globally unique across all departments because shared domain has no department path segment
 - Private-by-default link dashboards with optional read-only sharing across the ALVA department
 - Comprehensive per-link and per-user reports with local-time charts, human/bot and routing breakdowns, privacy-safe event tables, and summary/event CSV downloads
