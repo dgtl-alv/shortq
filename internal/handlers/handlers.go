@@ -121,9 +121,16 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, 200, map[string]string{"status": "ok"})
 }
 func (h *Handler) openapi(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	http.ServeFile(w, r, "docs/openapi.yaml")
 }
 func (h *Handler) swagger(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	http.ServeFile(w, r, "web/docs.html")
 }
 

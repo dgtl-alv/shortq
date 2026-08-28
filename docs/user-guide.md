@@ -216,7 +216,7 @@ curl -H 'X-API-Key: sq_live_xxx' http://localhost:8080/api/v1/links
 
 ## API Docs
 
-- UI docs offline: `http://localhost:8080/docs`
+- Swagger UI: `http://localhost:8080/docs`
 - OpenAPI YAML: `http://localhost:8080/docs/openapi.yaml`
 
 ## Role Matrix

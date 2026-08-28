@@ -56,8 +56,8 @@ paths:
       description: Comprehensive link report. Owners and scoped admins can view private links; department-shared links are readable by users in the same department. Deleted links remain reportable to their owner and scoped admins.
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, minimum: 1}}
-        - {name: from, in: query, schema: {type: string, format: date}, description: First local day, inclusive.}
-        - {name: to, in: query, schema: {type: string, format: date}, description: Last boundary date, exclusive.}
+        - {name: from, in: query, schema: {type: string, format: date}, description: "First local day, inclusive."}
+        - {name: to, in: query, schema: {type: string, format: date}, description: "Last boundary date, exclusive."}
         - {name: timezone, in: query, schema: {type: string, example: Asia/Jakarta}, description: IANA timezone; defaults to UTC.}
       responses: {'200': {description: Link report, content: {application/json: {schema: {$ref: '#/components/schemas/AnalyticsReport'}}}}, '400': {description: Invalid or more than 90-day range}, '404': {description: Link not visible}}
   /api/v1/reports/links/{id}/summary.csv:
@@ -202,7 +202,7 @@ paths:
       responses: {'200': {description: Domain activated}, '400': {description: DNS not verified}}
   /links:
     post:
-      description: Short.io-compatible create-link endpoint for config-only client switches. Uses `Authorization: APIKEY` and maps `originalURL` to ShortQ `target_url`, `path` to `slug`, and `domain` to an active tenant domain.
+      description: "Short.io-compatible create-link endpoint for config-only client switches. Uses `Authorization: APIKEY` and maps `originalURL` to ShortQ `target_url`, `path` to `slug`, and `domain` to an active tenant domain."
       security:
         - shortioApiKeyAuth: []
         - apiKeyAuth: []
@@ -442,7 +442,7 @@ components:
         slug: {type: string, minLength: 3, maxLength: 80, description: Create only; immutable afterward.}
         title: {type: string}
         visibility: {type: string, enum: [private, department], default: private, description: Dashboard/report visibility only; the public redirect remains public unless password-protected.}
-        redirect_code: {type: integer, enum: [301, 302, 307, 308], default: 302, description: 301 and 308 require all dynamic routing, password, expiry, click-limit and query-forwarding features to be disabled.}
+        redirect_code: {type: integer, enum: [301, 302, 307, 308], default: 302, description: "301 and 308 require all dynamic routing, password, expiry, click-limit and query-forwarding features to be disabled."}
         expires_at: {type: string, format: date-time, nullable: true}
         max_clicks: {type: integer, minimum: 1, nullable: true}
         clear_max_clicks: {type: boolean}
@@ -469,8 +469,8 @@ components:
         title: {type: string}
         tags: {type: array, items: {type: string}}
         redirectType: {type: integer, enum: [301, 302, 307, 308], nullable: true}
-        expiresAt: {oneOf: [{type: string}, {type: number}], description: RFC3339, YYYY-MM-DD, or milliseconds.}
-        ttl: {oneOf: [{type: string}, {type: number}], description: RFC3339, YYYY-MM-DD, or milliseconds.}
+        expiresAt: {oneOf: [{type: string}, {type: number}], description: "RFC3339, YYYY-MM-DD, or milliseconds."}
+        ttl: {oneOf: [{type: string}, {type: number}], description: "RFC3339, YYYY-MM-DD, or milliseconds."}
         expiredURL: {type: string, format: uri, nullable: true}
         androidURL: {type: string, format: uri, nullable: true}
         iphoneURL: {type: string, format: uri, nullable: true}

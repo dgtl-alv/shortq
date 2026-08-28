@@ -29,3 +29,26 @@ func TestValidateRejectsKnownDefaults(t *testing.T) {
 		t.Fatal("expected default superadmin password to be rejected")
 	}
 }
+
+func TestValidateAllowsDevAuthBypassWithoutOIDC(t *testing.T) {
+	c := validConfig()
+	c.OIDCTenantID = ""
+	c.OIDCClientID = ""
+	c.OIDCClientSecret = ""
+	c.OIDCAllowedDomain = ""
+	c.OIDCAllowedEmail = ""
+	c.DevAuthBypass = true
+	c.DevAuthEmail = "admin@shortq.local"
+	if err := Validate(c); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateRequiresDevAuthEmailWhenBypassEnabled(t *testing.T) {
+	c := validConfig()
+	c.DevAuthBypass = true
+	c.DevAuthEmail = ""
+	if err := Validate(c); err == nil {
+		t.Fatal("expected missing dev auth email to be rejected")
+	}
+}
