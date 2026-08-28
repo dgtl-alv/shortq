@@ -55,6 +55,8 @@ type AuditEventPage struct {
 type Link struct {
 	ID                int64       `json:"id"`
 	UserID            int64       `json:"user_id"`
+	CreatorName       string      `json:"creator_name,omitempty"`
+	CreatorEmail      string      `json:"creator_email,omitempty"`
 	TenantID          *int64      `json:"tenant_id"`
 	Slug              string      `json:"slug"`
 	TargetURL         string      `json:"target_url"`
