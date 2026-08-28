@@ -202,7 +202,7 @@ paths:
       responses: {'200': {description: Domain activated}, '400': {description: DNS not verified}}
   /links:
     post:
-      description: Short.io-compatible create-link endpoint for config-only client switches. Uses `Authorization: APIKEY` and maps `originalURL` to ShortQ `target_url`, `path` to `slug`, and `domain` to an active tenant domain.
+      description: "Short.io-compatible create-link endpoint for config-only client switches. Uses `Authorization: APIKEY` and maps `originalURL` to ShortQ `target_url`, `path` to `slug`, and `domain` to an active tenant domain."
       security:
         - shortioApiKeyAuth: []
         - apiKeyAuth: []
