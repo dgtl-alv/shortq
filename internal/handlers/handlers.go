@@ -81,6 +81,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/api-keys", h.withAuth(h.apiKeys))
 	mux.HandleFunc("/api/v1/api-keys/", h.withAuth(h.apiKeyByID))
 	mux.HandleFunc("/links", h.withAuth(h.shortioLinks))
+	mux.HandleFunc("/links/delete_bulk", h.withAuth(h.shortioDeleteBulk))
 	mux.HandleFunc("/links/", h.withAuth(h.shortioLinkByID))
 	mux.HandleFunc("/r/", h.redirectLegacy)
 	mux.HandleFunc("/", h.web)
@@ -713,6 +714,58 @@ func (h *Handler) shortioLinkByID(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, http.StatusOK, map[string]any{"success": true, "id": shortioLinkID(id), "idString": shortioLinkID(id)})
 }
 
+func (h *Handler) shortioDeleteBulk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var in struct {
+		LinkIDs []string `json:"link_ids"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if len(in.LinkIDs) < 1 || len(in.LinkIDs) > 150 {
+		errOut(w, http.StatusBadRequest, "link_ids must contain 1 to 150 links")
+		return
+	}
+	ids, err := parseShortioLinkIDs(in.LinkIDs)
+	if err != nil {
+		errOut(w, http.StatusBadRequest, "link_ids must be unique valid link ids")
+		return
+	}
+	idLabels := make([]string, len(ids))
+	for i, id := range ids {
+		idLabels[i] = shortioLinkID(id)
+	}
+	targetID := strings.Join(idLabels, ",")
+	if !h.requireDelete(w, r, "shortio.link.bulk_deleted", "link", targetID) {
+		return
+	}
+	u, _ := userFrom(r.Context())
+	beforeLinks, err := h.S.LinksByIDs(u, ids)
+	if err != nil {
+		errOut(w, http.StatusNotFound, "one or more links were not found; no links deleted")
+		return
+	}
+	if err := h.S.DeleteLinksBulk(u, ids); err != nil {
+		errOut(w, http.StatusNotFound, "one or more links were not found; no links deleted")
+		return
+	}
+	before := map[string]any{"links": func() []map[string]any {
+		out := make([]map[string]any, len(beforeLinks))
+		for i, link := range beforeLinks {
+			out[i] = linkAudit(link)
+		}
+		return out
+	}()}
+	if err := h.audit(r, "shortio.link.bulk_deleted", "link", targetID, "success", before, nil); err != nil {
+		errOut(w, http.StatusInternalServerError, "audit log unavailable")
+		return
+	}
+	jsonOut(w, http.StatusOK, map[string]any{"success": true, "deleted": len(ids), "link_ids": idLabels})
+}
+
 func (h *Handler) shortioCreatePayloadToLink(in shortioCreateLinkPayload) (models.Link, []byte, error) {
 	payload := linkPayload{
 		URL:          stringPtr(in.OriginalURL),
@@ -799,6 +852,20 @@ func (h *Handler) shortioLinkResponse(link models.Link, domain string, duplicate
 }
 
 func shortioLinkID(id int64) string { return fmt.Sprintf("lnk_shortq_%d", id) }
+
+func parseShortioLinkIDs(raw []string) ([]int64, error) {
+	ids := make([]int64, 0, len(raw))
+	seen := map[int64]bool{}
+	for _, value := range raw {
+		id, err := parseShortioLinkID(value)
+		if err != nil || seen[id] {
+			return nil, fmt.Errorf("invalid link id")
+		}
+		ids = append(ids, id)
+		seen[id] = true
+	}
+	return ids, nil
+}
 
 func parseShortioLinkID(raw string) (int64, error) {
 	raw = strings.TrimSpace(strings.Trim(raw, "/"))
