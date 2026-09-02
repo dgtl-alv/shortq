@@ -218,6 +218,42 @@ paths:
         - apiKeyAuth: []
       parameters: [{name: link_id, in: path, required: true, schema: {type: string}}]
       responses: {'200': {description: Deleted, content: {application/json: {schema: {type: object, properties: {success: {type: boolean}, id: {type: string}, idString: {type: string}}}}}}, '403': {description: Deletion access required}, '404': {description: Link not found}}
+  /links/delete_bulk:
+    delete:
+      description: "Short.io-compatible bulk delete endpoint. Uses `Authorization: APIKEY` and accepts `link_ids` as an array of Short.io link ID strings such as `lnk_shortq_123`; numeric ID strings are also accepted for ShortQ compatibility. Transactionally soft-deletes up to 150 unique links, matching Short.io's documented request limit. If any scoped link is absent, no links are deleted."
+      security:
+        - shortioApiKeyAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [link_ids]
+              properties:
+                link_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 150
+                  uniqueItems: true
+                  items:
+                    type: string
+                    pattern: '^lnk_(.*)_(.*)$'
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: {type: boolean}
+                  deleted: {type: integer}
+                  link_ids: {type: array, items: {type: string}}
+        '400': {description: Invalid link_ids}
+        '403': {description: Deletion access required}
+        '404': {description: One or more links not found; no links deleted}
   /api/v1/links:
     get:
       description: Backward-compatible unpaginated list. New integrations should use `/api/v1/links/page`.

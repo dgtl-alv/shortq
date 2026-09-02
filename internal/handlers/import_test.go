@@ -60,6 +60,24 @@ func TestShortioLinkIDParsing(t *testing.T) {
 	}
 }
 
+func TestShortioBulkLinkIDParsing(t *testing.T) {
+	got, err := parseShortioLinkIDs([]string{"lnk_shortq_42", "lnk_anything_43", "44"})
+	if err != nil {
+		t.Fatalf("parseShortioLinkIDs returned error: %v", err)
+	}
+	for i, want := range []int64{42, 43, 44} {
+		if got[i] != want {
+			t.Fatalf("id[%d] = %d, want %d", i, got[i], want)
+		}
+	}
+	if _, err := parseShortioLinkIDs([]string{"lnk_shortq_42", "42"}); err == nil {
+		t.Fatalf("duplicate ids were accepted")
+	}
+	if _, err := parseShortioLinkIDs([]string{"lnk_shortq_nope"}); err == nil {
+		t.Fatalf("invalid ids were accepted")
+	}
+}
+
 func TestShortioTimeParsing(t *testing.T) {
 	got, err := parseShortioTime("2026-08-26T10:30:00Z")
 	if err != nil || got != "2026-08-26T10:30:00Z" {
