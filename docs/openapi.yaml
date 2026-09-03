@@ -202,7 +202,7 @@ paths:
       responses: {'200': {description: Domain activated}, '400': {description: DNS not verified}}
   /links:
     post:
-      description: "Short.io-compatible create-link endpoint for config-only client switches. Uses `Authorization: APIKEY` and maps `originalURL` to ShortQ `target_url`, `path` to `slug`, and `domain` to an active tenant domain."
+      description: "Short.io-compatible create-link endpoint for config-only client switches. Uses `Authorization: APIKEY ***`, maps `originalURL` to ShortQ `target_url`, `path` to `slug`, and `domain` to an active tenant domain."
       security:
         - shortioApiKeyAuth: []
         - apiKeyAuth: []
@@ -542,6 +542,8 @@ components:
       properties:
         id: {type: integer}
         user_id: {type: integer}
+        creator_name: {type: string, description: Present in admin-scoped link listings.}
+        creator_email: {type: string, format: email, description: Present in admin-scoped link listings.}
         tenant_id: {type: integer, nullable: true}
         slug: {type: string}
         target_url: {type: string, format: uri}

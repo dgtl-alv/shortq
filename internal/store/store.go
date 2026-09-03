@@ -518,7 +518,14 @@ func (s *Store) listLinks(u models.User, limit int, cursor int64) ([]models.Link
 		return nil, err
 	}
 	rows.Close()
-	return s.hydrateLinks(out)
+	out, err = s.hydrateLinks(out)
+	if err != nil {
+		return nil, err
+	}
+	if u.Role == "superadmin" || u.Role == "tenant" {
+		return s.hydrateLinkCreators(out)
+	}
+	return out, nil
 }
 
 func (s *Store) LinksByIDs(u models.User, ids []int64) ([]models.Link, error) {
@@ -1128,6 +1135,54 @@ func (s *Store) hydrateLinks(links []models.Link) ([]models.Link, error) {
 			}
 			if index, ok := positions[linkID]; ok {
 				links[index].GeoTargets = append(links[index].GeoTargets, target)
+			}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return links, nil
+}
+
+func (s *Store) hydrateLinkCreators(links []models.Link) ([]models.Link, error) {
+	if len(links) == 0 {
+		return links, nil
+	}
+	positions := make(map[int64][]int)
+	for index := range links {
+		positions[links[index].UserID] = append(positions[links[index].UserID], index)
+	}
+	userIDs := make([]int64, 0, len(positions))
+	for userID := range positions {
+		userIDs = append(userIDs, userID)
+	}
+	sort.Slice(userIDs, func(i, j int) bool { return userIDs[i] < userIDs[j] })
+	const chunkSize = 500
+	for start := 0; start < len(userIDs); start += chunkSize {
+		end := start + chunkSize
+		if end > len(userIDs) {
+			end = len(userIDs)
+		}
+		args := make([]any, 0, end-start)
+		for _, userID := range userIDs[start:end] {
+			args = append(args, userID)
+		}
+		rows, err := s.DB.Query(`SELECT id,name,email FROM users WHERE id IN (`+placeholders(len(args))+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var userID int64
+			var name, email string
+			if err := rows.Scan(&userID, &name, &email); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			for _, index := range positions[userID] {
+				links[index].CreatorName = name
+				links[index].CreatorEmail = email
 			}
 		}
 		if err := rows.Err(); err != nil {

@@ -101,6 +101,7 @@ async function loadLinks() {
         <b>${esc(x.title || x.slug)}</b>
         <a href="${esc(x.short_url)}" target="_blank" rel="noopener">${esc(x.short_url)}</a>
         <div class="tiny">${esc(x.target_url)} · ${x.clicks} clicks · ${esc(x.visibility === "department" ? "shared with ALVA" : "private")}</div>
+        ${x.creator_name ? `<div class="tiny">Created by ${esc(x.creator_name)} &middot; ${esc(x.creator_email)}</div>` : ''}
       </div>
       <button class="secondary" onclick="openLinkReport(${x.id})">Report</button>
       ${canManageLink(x) ? '<button class="secondary" onclick="editLink(' + x.id + ')">Edit</button>' : ''}
