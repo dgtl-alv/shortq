@@ -1,1 +1,55 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ShortQ API Docs</title><link rel="stylesheet" href="/style.css"></head><body><main><section class="panel"><h1>ShortQ API</h1><p>OpenAPI spec tersedia sebagai YAML. UI ini offline-ready, tanpa CDN.</p><div class="actions"><a href="/docs/openapi.yaml">Download YAML</a><a class="ghost" href="/">Back home</a></div><pre id="spec">Loading...</pre></section></main><script>fetch('/docs/openapi.yaml').then(r=>r.text()).then(t=>spec.textContent=t).catch(e=>spec.textContent=e)</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#221F1F">
+  <title>ShortQ API Docs</title>
+  <link rel="icon" href="/alva-favicon.png" type="image/png">
+  <link rel="stylesheet" href="/style.css?v=20260828-swagger1">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.14/swagger-ui.css">
+</head>
+<body class="docs-page">
+  <div class="brand-rail" aria-hidden="true"></div>
+  <main class="shell docs-shell">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <span class="brand-signature">
+          <img src="/alva-favicon.png" alt="" class="brand-mark" aria-hidden="true">
+          <img src="/alva-logo.png" alt="ALVA" class="brand-logo">
+        </span>
+        <span class="product-name">shortQ API</span>
+      </div>
+      <nav>
+        <a class="button secondary" href="/">Home</a>
+        <a class="button" href="/docs/openapi.yaml?v=20260828-swagger2">Download YAML</a>
+      </nav>
+    </header>
+
+    <section class="docs-heading" aria-labelledby="docsTitle">
+      <div>
+        <p class="eyebrow">OpenAPI 3.0</p>
+        <h1 id="docsTitle">ShortQ API Docs</h1>
+      </div>
+      <span class="pill">Spec: /docs/openapi.yaml</span>
+    </section>
+
+    <section class="swagger-card" aria-label="Swagger UI">
+      <div id="swagger-ui">Loading API docs...</div>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.14/swagger-ui-bundle.js"></script>
+  <script>
+    window.addEventListener("load", function () {
+      window.ui = SwaggerUIBundle({
+        url: "/docs/openapi.yaml?v=20260828-swagger2",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        persistAuthorization: true,
+        displayRequestDuration: true,
+        tryItOutEnabled: true,
+      });
+    });
+  </script>
+</body>
+</html>

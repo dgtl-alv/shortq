@@ -20,6 +20,8 @@ type Config struct {
 	OIDCRedirectURL   string
 	OIDCAllowedEmail  string
 	OIDCAllowedDomain string
+	DevAuthBypass     bool
+	DevAuthEmail      string
 	SMTPHost          string
 	SMTPPort          string
 	SMTPUser          string
@@ -41,6 +43,8 @@ func Load() Config {
 		OIDCRedirectURL:   env("OIDC_REDIRECT_URL", env("APP_BASE_URL", "http://localhost:8080")+"/auth/microsoft/callback"),
 		OIDCAllowedEmail:  env("OIDC_ALLOWED_EMAIL", env("SUPERADMIN_EMAIL", "")),
 		OIDCAllowedDomain: env("OIDC_ALLOWED_DOMAIN", ""),
+		DevAuthBypass:     boolEnv("DEV_AUTH_BYPASS"),
+		DevAuthEmail:      env("DEV_AUTH_EMAIL", env("SUPERADMIN_EMAIL", "")),
 		SMTPHost:          os.Getenv("SMTP_HOST"),
 		SMTPPort:          env("SMTP_PORT", "587"),
 		SMTPUser:          os.Getenv("SMTP_USER"),
@@ -56,13 +60,19 @@ func Validate(c Config) error {
 	if len(c.SuperPassword) < 16 || c.SuperPassword == "ChangeMe123!" {
 		return errors.New("SUPERADMIN_PASSWORD must be a non-default value of at least 16 characters")
 	}
-	for name, value := range map[string]string{"OIDC_TENANT_ID": c.OIDCTenantID, "OIDC_CLIENT_ID": c.OIDCClientID, "OIDC_CLIENT_SECRET": c.OIDCClientSecret, "OIDC_REDIRECT_URL": c.OIDCRedirectURL} {
-		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("%s is required", name)
+	if c.DevAuthBypass {
+		if strings.TrimSpace(c.DevAuthEmail) == "" {
+			return errors.New("DEV_AUTH_EMAIL is required when DEV_AUTH_BYPASS is enabled")
 		}
-	}
-	if strings.TrimSpace(c.OIDCAllowedEmail) == "" && strings.TrimSpace(c.OIDCAllowedDomain) == "" {
-		return errors.New("OIDC_ALLOWED_EMAIL or OIDC_ALLOWED_DOMAIN is required")
+	} else {
+		for name, value := range map[string]string{"OIDC_TENANT_ID": c.OIDCTenantID, "OIDC_CLIENT_ID": c.OIDCClientID, "OIDC_CLIENT_SECRET": c.OIDCClientSecret, "OIDC_REDIRECT_URL": c.OIDCRedirectURL} {
+			if strings.TrimSpace(value) == "" {
+				return fmt.Errorf("%s is required", name)
+			}
+		}
+		if strings.TrimSpace(c.OIDCAllowedEmail) == "" && strings.TrimSpace(c.OIDCAllowedDomain) == "" {
+			return errors.New("OIDC_ALLOWED_EMAIL or OIDC_ALLOWED_DOMAIN is required")
+		}
 	}
 	return nil
 }
@@ -73,6 +83,15 @@ func env(k, d string) string {
 		return d
 	}
 	return v
+}
+
+func boolEnv(k string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(k))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (c Config) OIDCIssuer() string {
