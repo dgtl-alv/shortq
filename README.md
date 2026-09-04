@@ -11,10 +11,10 @@ docker compose up --build
 
 Open `http://localhost:8080`.
 
-Development server 54 should use:
+Internal deployment should use:
 
 ```env
-APP_BASE_URL=https://s.ilectraev.com
+APP_BASE_URL=https://internal.alvaauto.com
 ```
 
 Default superadmin from `.env`:

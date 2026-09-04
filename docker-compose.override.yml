@@ -3,7 +3,7 @@ services:
     container_name: shortq-app
     restart: unless-stopped
     ports: !override
-      - "127.0.0.1:18080:8080"
+      - "127.0.0.1:8000:8080"
   db:
     container_name: shortq-db
     restart: unless-stopped

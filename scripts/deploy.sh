@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="/home/redya/apps/shortq"
+APP_DIR="/home/fitrah/apps/shortq"
 BRANCH="main"
-LOCAL_HEALTH="http://127.0.0.1:18080/healthz"
+LOCAL_HEALTH="http://127.0.0.1:8000/healthz"
 
 cd "$APP_DIR"
 
