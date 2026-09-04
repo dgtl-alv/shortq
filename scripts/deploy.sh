@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="/home/fitrah/apps/shortq"
+APP_DIR="${SHORTQ_APP_DIR:-/opt/alva/apps/prod/shortq}"
 BRANCH="main"
 LOCAL_HEALTH="http://127.0.0.1:8000/healthz"
 

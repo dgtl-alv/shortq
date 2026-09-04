@@ -41,4 +41,4 @@ jobs:
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             "$DEPLOY_USER@$DEPLOY_HOST" \
-            deploy
+            "SHORTQ_APP_DIR=/opt/alva/apps/prod/shortq /opt/alva/apps/prod/shortq/scripts/deploy.sh"
