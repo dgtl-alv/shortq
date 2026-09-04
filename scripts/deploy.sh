@@ -16,6 +16,9 @@ git reset --hard "origin/$BRANCH"
 printf 'shortq deploy: compose config\n'
 docker compose config --quiet
 
+printf 'shortq deploy: stop app\n'
+docker compose stop app || true
+
 printf 'shortq deploy: build and restart\n'
 docker compose up -d --build
 
