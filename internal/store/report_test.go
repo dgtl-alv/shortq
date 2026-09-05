@@ -30,8 +30,8 @@ func TestDeleteLinkSoftDeletesOwnedLink(t *testing.T) {
 	defer db.Close()
 	s := New(db)
 	user := models.User{ID: 9, Role: "customer"}
-	query := `UPDATE links SET deleted_at=UTC_TIMESTAMP() WHERE id=? AND deleted_at IS NULL AND links.user_id=?`
-	mock.ExpectExec(regexp.QuoteMeta(query)).WithArgs(int64(22), int64(9)).WillReturnResult(sqlmock.NewResult(0, 1))
+	query := `UPDATE links SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND deleted_at IS NULL AND links.user_id=?`
+	mock.ExpectExec(regexp.QuoteMeta(rebind(query))).WithArgs(int64(22), int64(9)).WillReturnResult(sqlmock.NewResult(0, 1))
 	if err := s.DeleteLink(user, 22); err != nil {
 		t.Fatal(err)
 	}

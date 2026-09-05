@@ -3,12 +3,7 @@ services:
     container_name: shortq-app
     restart: unless-stopped
     ports: !override
-      - "127.0.0.1:8000:8080"
+      - "127.0.0.1:${SHORTQ_PORT:-8000}:8080"
   db:
-    container_name: shortq-db
+    container_name: shortq-postgres
     restart: unless-stopped
-    environment:
-      MYSQL_DATABASE: shortq
-      MYSQL_USER: shortq
-      MYSQL_PASSWORD: ${SHORTQ_MYSQL_PASSWORD:-shortqpass}
-      MYSQL_ROOT_PASSWORD: ${SHORTQ_MYSQL_ROOT_PASSWORD:-rootpass}

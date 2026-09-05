@@ -9,6 +9,22 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: shortq_test
+          POSTGRES_USER: shortq
+          POSTGRES_PASSWORD: shortqpass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shortq -d shortq_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://shortq:shortqpass@127.0.0.1:5432/shortq_test?sslmode=disable
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,7 +32,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.23'
           cache: true
 
       - name: Check gofmt
@@ -39,11 +55,11 @@ jobs:
       - name: Validate Docker Compose
         run: |
           cat > .env <<'EOF'
-          DB_DSN=shortq:shortqpass@tcp(db:3306)/shortq?parseTime=true
-          BASE_URL=http://localhost:8080
-          SESSION_SECRET=ci-session-secret
+          DATABASE_URL=postgres://shortq:shortqpass@db:5432/shortq?sslmode=disable
+          APP_BASE_URL=http://localhost:8080
+          JWT_SECRET=ci-session-secret-at-least-32-characters
           SUPERADMIN_EMAIL=ci@example.com
-          SUPERADMIN_PASSWORD=ci-password
+          SUPERADMIN_PASSWORD=ci-password-at-least-16
           OIDC_ISSUER_URL=https://login.microsoftonline.com/common/v2.0
           OIDC_CLIENT_ID=ci-client-id
           OIDC_CLIENT_SECRET=ci-client-secret

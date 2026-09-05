@@ -19,7 +19,7 @@ func main() {
 	if err := config.Validate(cfg); err != nil {
 		log.Fatalf("invalid security configuration: %v", err)
 	}
-	database, err := db.Open(cfg.MySQLDSN)
+	database, err := db.Open(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}

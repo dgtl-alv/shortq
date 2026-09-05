@@ -10,7 +10,7 @@ import (
 type Config struct {
 	Addr              string
 	BaseURL           string
-	MySQLDSN          string
+	DatabaseURL       string
 	JWTSecret         string
 	SuperEmail        string
 	SuperPassword     string
@@ -33,7 +33,7 @@ func Load() Config {
 	return Config{
 		Addr:              env("APP_ADDR", ":8080"),
 		BaseURL:           env("APP_BASE_URL", "http://localhost:8080"),
-		MySQLDSN:          env("MYSQL_DSN", "shortq:shortqpass@tcp(127.0.0.1:3306)/shortq?parseTime=true&multiStatements=true"),
+		DatabaseURL:       env("DATABASE_URL", "postgres://shortq:shortqpass@127.0.0.1:5432/shortq?sslmode=disable"),
 		JWTSecret:         env("JWT_SECRET", "dev-secret-change-me-min-32-chars"),
 		SuperEmail:        env("SUPERADMIN_EMAIL", "[EMAIL_HASH:f50fd01878cf]"),
 		SuperPassword:     env("SUPERADMIN_PASSWORD", "ChangeMe123!"),

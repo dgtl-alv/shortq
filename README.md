@@ -1,6 +1,6 @@
 # ShortQ
 
-URL shortener + QR code generator. Backend plain Go stdlib router. Frontend static offline-ready vanilla JS. DB MySQL.
+URL shortener + QR code generator. Backend plain Go stdlib router. Frontend static offline-ready vanilla JS. DB PostgreSQL.
 
 ## Run
 

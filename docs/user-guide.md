@@ -243,6 +243,6 @@ curl -H 'X-API-Key: sq_live_xxx' http://localhost:8080/api/v1/links
 - Ganti `SUPERADMIN_EMAIL` dan `SUPERADMIN_PASSWORD` di `.env`.
 - Ganti `JWT_SECRET` minimal 32 karakter acak.
 - Pakai HTTPS di reverse proxy.
-- Backup volume MySQL.
+- Back up the PostgreSQL database and volume.
 - Set `APP_BASE_URL` ke domain production.
 - Jangan share API key di chat/log.
