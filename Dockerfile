@@ -13,7 +13,8 @@ RUN apk add --no-cache ca-certificates && addgroup -S shortq && adduser -S -G sh
 COPY --from=build /out/shortq /app/shortq
 COPY web /app/web
 COPY docs /app/docs
-RUN chmod -R a+rX /app/web /app/docs
+COPY deploy/rds-global-bundle.pem /usr/local/share/ca-certificates/aws-rds-global-bundle.crt
+RUN update-ca-certificates && chmod -R a+rX /app/web /app/docs
 EXPOSE 8080
 USER shortq
 CMD ["/app/shortq"]
