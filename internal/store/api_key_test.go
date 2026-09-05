@@ -12,7 +12,7 @@ func TestCreateAPIKeyReturnsInsertedID(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	mock.ExpectExec("INSERT INTO api_keys").WithArgs(int64(7), "smoke", "hash", "sq_live_prefix", "user").WillReturnResult(sqlmock.NewResult(42, 1))
+	mock.ExpectQuery("INSERT INTO api_keys").WithArgs(int64(7), "smoke", "hash", "sq_live_prefix", "user").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(42))
 	id, err := New(db).CreateAPIKey(7, "smoke", "hash", "sq_live_prefix", "user")
 	if err != nil {
 		t.Fatal(err)

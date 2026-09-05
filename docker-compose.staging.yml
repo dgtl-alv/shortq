@@ -1,0 +1,10 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      APP_BASE_URL: https://s-staging.alvaauto.com
+    ports:
+      - "127.0.0.1:${SHORTQ_PORT:-18081}:8080"

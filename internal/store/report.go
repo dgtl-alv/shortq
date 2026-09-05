@@ -150,8 +150,8 @@ func (s *Store) buildReport(subject reportSubject, from, to time.Time, loc *time
 			"created_at": subject.user.CreatedAt,
 		}
 		if err := s.DB.QueryRow(`SELECT COALESCE(SUM(clicks),0),
-			COALESCE(SUM(deleted_at IS NULL),0),COALESCE(SUM(deleted_at IS NOT NULL),0),
-			COALESCE(SUM(visibility='private'),0),COALESCE(SUM(visibility='department'),0)
+			COUNT(*) FILTER (WHERE deleted_at IS NULL),COUNT(*) FILTER (WHERE deleted_at IS NOT NULL),
+			COUNT(*) FILTER (WHERE visibility='private'),COUNT(*) FILTER (WHERE visibility='department')
 			FROM links WHERE user_id=?`, subject.id).Scan(
 			&report.Summary.AllTimeClicks, &report.Summary.ActiveLinks, &report.Summary.DeletedLinks,
 			&report.Summary.PrivateLinks, &report.Summary.SharedLinks); err != nil {

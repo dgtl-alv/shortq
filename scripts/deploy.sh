@@ -1,34 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 APP_DIR="${SHORTQ_APP_DIR:-/opt/alva/apps/prod/shortq}"
-BRANCH="main"
-LOCAL_HEALTH="http://127.0.0.1:8000/healthz"
-
+BRANCH="${SHORTQ_BRANCH:-main}"
+COMPOSE_FILE="${SHORTQ_COMPOSE_FILE:-docker-compose.yml}"
+PROJECT_NAME="${SHORTQ_PROJECT_NAME:-shortq}"
+LOCAL_HEALTH="${SHORTQ_HEALTH_URL:-http://127.0.0.1:8000/healthz}"
 cd "$APP_DIR"
-
-printf 'shortq deploy: fetch %s\n' "$BRANCH"
 git fetch --prune origin "$BRANCH"
-
-printf 'shortq deploy: reset origin/%s\n' "$BRANCH"
 git reset --hard "origin/$BRANCH"
-
-printf 'shortq deploy: compose config\n'
-docker compose config --quiet
-
-printf 'shortq deploy: stop app\n'
-docker compose stop app || true
-
-printf 'shortq deploy: build and restart\n'
-docker compose up -d --build
-
-printf 'shortq deploy: health\n'
-for i in $(seq 1 30); do
-  if curl -fsS "$LOCAL_HEALTH"; then
-    printf '\nshortq deploy: ok\n'
-    exit 0
-  fi
-  sleep 2
-done
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" config --quiet
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build
+a=0; while [ "$a" -lt 30 ]; do curl -fsS "$LOCAL_HEALTH" && exit 0; a=$((a+1)); sleep 2; done
 printf 'shortq deploy: health failed\n' >&2
 exit 1

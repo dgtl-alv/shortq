@@ -16,7 +16,7 @@ import (
 	"shortq/internal/models"
 )
 
-type Store struct{ DB *sql.DB }
+type Store struct{ DB *database }
 
 var slugRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,80}$`)
 
@@ -29,7 +29,7 @@ var isoCountryCodes = func() map[string]bool {
 	return out
 }()
 
-func New(db *sql.DB) *Store { return &Store{DB: db} }
+func New(db *sql.DB) *Store { return &Store{DB: wrapDatabase(db)} }
 
 func (s *Store) SetUserActive(id int64, active bool) (models.User, error) {
 	tx, err := s.DB.Begin()
@@ -82,7 +82,7 @@ func (s *Store) RecordAudit(event models.AuditEvent) error {
 	if event.After == nil {
 		after = nil
 	}
-	_, err := s.DB.Exec(`INSERT INTO audit_events(actor_user_id,actor_email,auth_type,action,target_type,target_id,outcome,before_json,after_json,ip_address,user_agent) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, event.ActorUserID, event.ActorEmail, event.AuthType, event.Action, event.TargetType, event.TargetID, event.Outcome, before, after, event.IPAddress, event.UserAgent)
+	_, err := s.DB.Exec(`INSERT INTO audit_events(actor_user_id,actor_email,auth_type,action,target_type,target_id,outcome,before_json,after_json,ip_address,user_agent) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, event.ActorUserID, event.ActorEmail, event.AuthType, event.Action, event.TargetType, event.TargetID, event.Outcome, jsonArgument(before), jsonArgument(after), event.IPAddress, event.UserAgent)
 	return err
 }
 
@@ -163,7 +163,7 @@ func (s *Store) ListAuditEvents(values url.Values) (models.AuditEventPage, error
 
 func (s *Store) PurgeOldAuditEvents() error {
 	for {
-		res, err := s.DB.Exec(`DELETE FROM audit_events WHERE created_at < NOW() - INTERVAL 365 DAY LIMIT 1000`)
+		res, err := s.DB.Exec(`DELETE FROM audit_events WHERE id IN (SELECT id FROM audit_events WHERE created_at < NOW() - INTERVAL '365 days' ORDER BY id LIMIT 1000)`)
 		if err != nil {
 			return err
 		}
@@ -224,7 +224,7 @@ func (s *Store) ConsumeReset(hash string) (int64, error) {
 }
 
 func (s *Store) EnsureTenant(name, slug string) (models.Tenant, error) {
-	_, err := s.DB.Exec(`INSERT INTO tenants(name,slug) VALUES(?,?) ON DUPLICATE KEY UPDATE name=VALUES(name)`, name, slug)
+	_, err := s.DB.Exec(`INSERT INTO tenants(name,slug) VALUES(?,?) ON CONFLICT(slug) DO UPDATE SET name=EXCLUDED.name`, name, slug)
 	if err != nil {
 		return models.Tenant{}, err
 	}
@@ -299,11 +299,9 @@ func (s *Store) CreateAPIKey(uid int64, name, hash, prefix, scope string) (int64
 	if scope != "user" {
 		scope = "account"
 	}
-	result, err := s.DB.Exec(`INSERT INTO api_keys(user_id,name,key_hash,prefix,scope) VALUES(?,?,?,?,?)`, uid, name, hash, prefix, scope)
-	if err != nil {
-		return 0, err
-	}
-	return result.LastInsertId()
+	var id int64
+	err := s.DB.QueryRow(`INSERT INTO api_keys(user_id,name,key_hash,prefix,scope) VALUES(?,?,?,?,?) RETURNING id`, uid, name, hash, prefix, scope).Scan(&id)
+	return id, err
 }
 
 func (s *Store) UserByAPIKey(hash string) (models.User, string, error) {
@@ -389,12 +387,12 @@ func (s *Store) CreateLink(u models.User, link models.Link, passwordHash []byte)
 		return models.Link{}, err
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`INSERT INTO links(user_id,tenant_id,slug,target_url,title,visibility,redirect_code,expires_at,max_clicks,expired_url,ios_url,android_url,password_hash,forward_query,utm_source,utm_medium,utm_campaign,utm_term,utm_content,tags_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		u.ID, u.TenantID, link.Slug, link.TargetURL, link.Title, link.Visibility, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, passwordHash, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, tags)
+	var id int64
+	err = tx.QueryRow(`INSERT INTO links(user_id,tenant_id,slug,target_url,title,visibility,redirect_code,expires_at,max_clicks,expired_url,ios_url,android_url,password_hash,forward_query,utm_source,utm_medium,utm_campaign,utm_term,utm_content,tags_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+		u.ID, u.TenantID, link.Slug, link.TargetURL, link.Title, link.Visibility, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, passwordHash, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, string(tags)).Scan(&id)
 	if err != nil {
 		return models.Link{}, err
 	}
-	id, _ := res.LastInsertId()
 	if err := replaceGeoTargets(tx, id, link.GeoTargets); err != nil {
 		return models.Link{}, err
 	}
@@ -436,7 +434,7 @@ func (s *Store) CreateLinksBulk(u models.User, links []models.Link) ([]models.Li
 		return nil, err
 	}
 	defer tx.Rollback()
-	insertStmt, err := tx.Prepare(`INSERT INTO links(user_id,tenant_id,slug,target_url,title,visibility,redirect_code,expires_at,max_clicks,expired_url,ios_url,android_url,forward_query,utm_source,utm_medium,utm_campaign,utm_term,utm_content,tags_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+	insertStmt, err := tx.Prepare(`INSERT INTO links(user_id,tenant_id,slug,target_url,title,visibility,redirect_code,expires_at,max_clicks,expired_url,ios_url,android_url,forward_query,utm_source,utm_medium,utm_campaign,utm_term,utm_content,tags_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`)
 	if err != nil {
 		return nil, err
 	}
@@ -449,11 +447,11 @@ func (s *Store) CreateLinksBulk(u models.User, links []models.Link) ([]models.Li
 	ids := make([]int64, 0, len(links))
 	for index, link := range links {
 		tags, _ := json.Marshal(normalizeTags(link.Tags))
-		res, err := insertStmt.Exec(u.ID, u.TenantID, link.Slug, link.TargetURL, link.Title, link.Visibility, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, tags)
+		var id int64
+		err := insertStmt.QueryRow(u.ID, u.TenantID, link.Slug, link.TargetURL, link.Title, link.Visibility, link.RedirectCode, link.ExpiresAt, link.MaxClicks, link.ExpiredURL, link.IOSURL, link.AndroidURL, link.ForwardQuery, link.UTMSource, link.UTMMedium, link.UTMCampaign, link.UTMTerm, link.UTMContent, string(tags)).Scan(&id)
 		if err != nil {
 			return nil, fmt.Errorf("row %d: %w", index+2, err)
 		}
-		id, _ := res.LastInsertId()
 		ids = append(ids, id)
 		for _, target := range link.GeoTargets {
 			if _, err := geoStmt.Exec(id, strings.ToUpper(strings.TrimSpace(target.CountryCode)), strings.TrimSpace(target.TargetURL)); err != nil {
@@ -620,7 +618,7 @@ func (s *Store) UpdateLinksBulk(u models.User, updates []LinkUpdate) ([]models.L
 	if found != len(ids) {
 		return nil, sql.ErrNoRows
 	}
-	baseSQL := `UPDATE links SET target_url=?,title=?,visibility=?,redirect_code=?,expires_at=?,max_clicks=?,expired_url=?,ios_url=?,android_url=?,forward_query=?,utm_source=?,utm_medium=?,utm_campaign=?,utm_term=?,utm_content=?,tags_json=?`
+	baseSQL := `UPDATE links SET updated_at=NOW(),target_url=?,title=?,visibility=?,redirect_code=?,expires_at=?,max_clicks=?,expired_url=?,ios_url=?,android_url=?,forward_query=?,utm_source=?,utm_medium=?,utm_campaign=?,utm_term=?,utm_content=?,tags_json=?`
 	plainStmt, err := tx.Prepare(baseSQL + ` WHERE id=?`)
 	if err != nil {
 		return nil, err
@@ -745,7 +743,7 @@ func (s *Store) LinkByID(u models.User, id int64) (models.Link, error) {
 }
 
 func (s *Store) DeleteLink(u models.User, id int64) error {
-	q := `UPDATE links SET deleted_at=UTC_TIMESTAMP() WHERE id=? AND deleted_at IS NULL`
+	q := `UPDATE links SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND deleted_at IS NULL`
 	args := []any{id}
 	q, args = addLinkManageScope(q, args, u, "links")
 	res, err := s.DB.Exec(q, args...)
@@ -762,7 +760,7 @@ func (s *Store) DeleteLinksBulk(u models.User, ids []int64) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	q := `UPDATE links SET deleted_at=UTC_TIMESTAMP() WHERE deleted_at IS NULL AND id IN (` + placeholders(len(ids)) + `)`
+	q := `UPDATE links SET deleted_at=CURRENT_TIMESTAMP WHERE deleted_at IS NULL AND id IN (` + placeholders(len(ids)) + `)`
 	args := make([]any, 0, len(ids)+1)
 	for _, id := range ids {
 		args = append(args, id)
@@ -813,7 +811,7 @@ func (s *Store) RecordClick(event models.ClickEvent, increment bool, maxClicks *
 	if err != nil {
 		return false, err
 	}
-	_, err = tx.Exec(`INSERT INTO click_rollups_daily(day,link_id,country_code,device,browser,referrer_host,utm_campaign,route_type,status_code,clicks) VALUES(CURRENT_DATE(),?,?,?,?,?,?,?,?,1) ON DUPLICATE KEY UPDATE clicks=clicks+1`,
+	_, err = tx.Exec(`INSERT INTO click_rollups_daily(day,link_id,country_code,device,browser,referrer_host,utm_campaign,route_type,status_code,clicks) VALUES(CURRENT_DATE,?,?,?,?,?,?,?,?,1) ON CONFLICT(day,link_id,country_code,device,browser,referrer_host,utm_campaign,route_type,status_code) DO UPDATE SET clicks=click_rollups_daily.clicks+1`,
 		event.LinkID, event.CountryCode, event.Device, event.Browser, event.ReferrerHost, event.UTMCampaign, event.RouteType, event.StatusCode)
 	if err != nil {
 		return false, err
@@ -822,7 +820,7 @@ func (s *Store) RecordClick(event models.ClickEvent, increment bool, maxClicks *
 }
 
 func (s *Store) PurgeOldClicks() error {
-	_, err := s.DB.Exec(`DELETE FROM clicks WHERE created_at < UTC_TIMESTAMP() - INTERVAL 90 DAY ORDER BY id LIMIT 10000`)
+	_, err := s.DB.Exec(`DELETE FROM clicks WHERE id IN (SELECT id FROM clicks WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '90 days' ORDER BY id LIMIT 10000)`)
 	return err
 }
 
@@ -834,7 +832,7 @@ func (s *Store) Analytics(u models.User) (models.Analytics, error) {
 	if err := s.DB.QueryRow(q, args...).Scan(&a.TotalLinks, &a.TotalClicks); err != nil {
 		return a, err
 	}
-	clickQ := `SELECT COUNT(*) FROM clicks c JOIN links l ON l.id=c.link_id WHERE l.deleted_at IS NULL AND DATE(c.created_at)=CURRENT_DATE()`
+	clickQ := `SELECT COUNT(*) FROM clicks c JOIN links l ON l.id=c.link_id WHERE l.deleted_at IS NULL AND DATE(c.created_at)=CURRENT_DATE`
 	clickArgs := []any{}
 	clickQ, clickArgs = addLinkViewScope(clickQ, clickArgs, u, "l", false)
 	_ = s.DB.QueryRow(clickQ, clickArgs...).Scan(&a.TodayClicks)
@@ -924,7 +922,7 @@ func (s *Store) ListClicks(u models.User, values url.Values) (models.ClickPage, 
 }
 
 func (s *Store) AnalyticsTimeseries(u models.User, values url.Values) ([]models.AnalyticsPoint, error) {
-	q := `SELECT DATE_FORMAT(r.day,'%Y-%m-%d'),COALESCE(SUM(r.clicks),0) FROM click_rollups_daily r JOIN links l ON l.id=r.link_id WHERE l.deleted_at IS NULL`
+	q := `SELECT TO_CHAR(r.day,'YYYY-MM-DD'),COALESCE(SUM(r.clicks),0) FROM click_rollups_daily r JOIN links l ON l.id=r.link_id WHERE l.deleted_at IS NULL`
 	args := []any{}
 	q, args = addLinkScope(q, args, u, "l")
 	if value := values.Get("link_id"); value != "" {
@@ -951,7 +949,7 @@ func (s *Store) AnalyticsTimeseries(u models.User, values url.Values) ([]models.
 }
 
 func (s *Store) AnalyticsBreakdown(u models.User, dimension string, values url.Values) ([]models.AnalyticsPoint, error) {
-	columns := map[string]string{"country": "r.country_code", "device": "r.device", "browser": "r.browser", "referrer": "r.referrer_host", "campaign": "r.utm_campaign", "route": "r.route_type", "status": "CAST(r.status_code AS CHAR)"}
+	columns := map[string]string{"country": "r.country_code", "device": "r.device", "browser": "r.browser", "referrer": "r.referrer_host", "campaign": "r.utm_campaign", "route": "r.route_type", "status": "CAST(r.status_code AS TEXT)"}
 	column, ok := columns[dimension]
 	if !ok {
 		return nil, errors.New("group_by must be country, device, browser, referrer, campaign, route or status")
@@ -1201,7 +1199,7 @@ func placeholders(count int) string {
 	return strings.TrimSuffix(strings.Repeat("?,", count), ",")
 }
 
-func replaceGeoTargets(tx *sql.Tx, linkID int64, targets []models.GeoTarget) error {
+func replaceGeoTargets(tx *transaction, linkID int64, targets []models.GeoTarget) error {
 	if _, err := tx.Exec(`DELETE FROM link_geo_targets WHERE link_id=?`, linkID); err != nil {
 		return err
 	}
@@ -1456,7 +1454,7 @@ func (s *Store) ActiveDomainsForTenants(tenantIDs []int64) (map[int64]string, er
 	for _, tenantID := range tenantIDs {
 		args = append(args, tenantID)
 	}
-	rows, err := s.DB.Query(`SELECT tenant_id,SUBSTRING_INDEX(GROUP_CONCAT(domain ORDER BY verified_at DESC,id DESC),',',1) FROM tenant_domains WHERE status='active' AND tenant_id IN (`+placeholders(len(args))+`) GROUP BY tenant_id`, args...)
+	rows, err := s.DB.Query(`SELECT DISTINCT ON (tenant_id) tenant_id,domain FROM tenant_domains WHERE status='active' AND tenant_id IN (`+placeholders(len(args))+`) ORDER BY tenant_id,verified_at DESC,id DESC`, args...)
 	if err != nil {
 		return nil, err
 	}

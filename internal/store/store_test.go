@@ -26,13 +26,13 @@ func TestListLinksPageUsesBatchedGeoHydration(t *testing.T) {
 		rows.AddRow(id, 1, tenantID, "slug-test", "https://example.org", "", "private", 0, 302, nil, nil, "", "", "", true, "", "", "", "", "", []byte(`[]`), nil, time.Now(), nil)
 	}
 	query := `SELECT ` + linkColumns + ` FROM links WHERE deleted_at IS NULL AND links.tenant_id=? ORDER BY id DESC LIMIT ?`
-	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs(tenantID, 3).WillReturnRows(rows)
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT link_id,country_code,target_url FROM link_geo_targets WHERE link_id IN (?,?,?) ORDER BY link_id,country_code`)).
+	mock.ExpectQuery(regexp.QuoteMeta(rebind(query))).WithArgs(tenantID, 3).WillReturnRows(rows)
+	mock.ExpectQuery(regexp.QuoteMeta(rebind(`SELECT link_id,country_code,target_url FROM link_geo_targets WHERE link_id IN (?,?,?) ORDER BY link_id,country_code`))).
 		WithArgs(int64(10), int64(9), int64(8)).
 		WillReturnRows(sqlmock.NewRows([]string{"link_id", "country_code", "target_url"}).
 			AddRow(10, "ID", "https://id.example.org").
 			AddRow(9, "SG", "https://sg.example.org"))
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id,name,email FROM users WHERE id IN (?)`)).
+	mock.ExpectQuery(regexp.QuoteMeta(rebind(`SELECT id,name,email FROM users WHERE id IN (?)`))).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "email"}).AddRow(1, "Link Owner", "owner@alvaauto.com"))
 
@@ -60,8 +60,8 @@ func TestListLinksPageDoesNotExposeCreatorToCustomer(t *testing.T) {
 	columns := []string{"id", "user_id", "tenant_id", "slug", "target_url", "title", "visibility", "clicks", "redirect_code", "expires_at", "max_clicks", "expired_url", "ios_url", "android_url", "forward_query", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "tags_json", "password_hash", "created_at", "deleted_at"}
 	rows := sqlmock.NewRows(columns).AddRow(10, 1, tenantID, "slug-test", "https://example.org", "", "private", 0, 302, nil, nil, "", "", "", true, "", "", "", "", "", []byte(`[]`), nil, time.Now(), nil)
 	query := `SELECT ` + linkColumns + ` FROM links WHERE deleted_at IS NULL AND (links.user_id=? OR (links.tenant_id=? AND links.visibility='department' AND links.deleted_at IS NULL)) ORDER BY id DESC LIMIT ?`
-	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs(int64(1), tenantID, 2).WillReturnRows(rows)
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT link_id,country_code,target_url FROM link_geo_targets WHERE link_id IN (?) ORDER BY link_id,country_code`)).
+	mock.ExpectQuery(regexp.QuoteMeta(rebind(query))).WithArgs(int64(1), tenantID, 2).WillReturnRows(rows)
+	mock.ExpectQuery(regexp.QuoteMeta(rebind(`SELECT link_id,country_code,target_url FROM link_geo_targets WHERE link_id IN (?) ORDER BY link_id,country_code`))).
 		WithArgs(int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"link_id", "country_code", "target_url"}))
 

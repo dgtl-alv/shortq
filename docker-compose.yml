@@ -8,18 +8,17 @@ services:
       db:
         condition: service_healthy
   db:
-    image: mysql:8.4
+    image: postgres:17-alpine
     environment:
-      MYSQL_DATABASE: shortq
-      MYSQL_USER: shortq
-      MYSQL_PASSWORD: shortqpass
-      MYSQL_ROOT_PASSWORD: rootpass
+      POSTGRES_DB: shortq
+      POSTGRES_USER: shortq
+      POSTGRES_PASSWORD: ${SHORTQ_POSTGRES_PASSWORD:-shortqpass}
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "pg_isready -U shortq -d shortq"]
       interval: 5s
       timeout: 3s
       retries: 20
 volumes:
-  mysql_data:
+  postgres_data:
