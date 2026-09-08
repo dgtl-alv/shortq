@@ -9,7 +9,7 @@ case "$DEPLOY_ENV:$DEPLOY_REF" in
     APP_DIR="${SHORTQ_APP_DIR:-/opt/alva/apps/staging/shortq}"
     COMPOSE_FILE="docker-compose.staging.yml"
     PROJECT_NAME="shortq-staging"
-    LOCAL_HEALTH="${SHORTQ_HEALTH_URL:-http://127.0.0.1:18081/healthz}"
+    LOCAL_HEALTH="${SHORTQ_HEALTH_URL:-http://127.0.0.1:8000/healthz}"
     ;;
   production:prod-*)
     APP_DIR="${SHORTQ_APP_DIR:-/opt/alva/apps/prod/shortq}"
