@@ -1,0 +1,50 @@
+name: Deploy production
+
+on:
+  push:
+    tags:
+      - prod-????-??-??-*
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shortq-production
+  cancel-in-progress: false
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.tag.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^prod-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+$ ]]
+          git fetch --force origin main
+          sha="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          git merge-base --is-ancestor "$sha" origin/main
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+  deploy:
+    needs: validate-tag
+    runs-on: [self-hosted, linux, shortq-production]
+    environment: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.validate-tag.outputs.sha }}
+          fetch-depth: 0
+      - name: Deploy exact tagged SHA
+        env:
+          DEPLOY_SHA: ${{ needs.validate-tag.outputs.sha }}
+          DEPLOY_TAG: ${{ github.ref_name }}
+          APP_DIR: /opt/alva/apps/prod/shortq
+          COMPOSE_FILE: docker-compose.yml
+          PROJECT_NAME: shortq
+          HEALTH_URL: http://127.0.0.1:8080/healthz
+        run: scripts/deploy.sh

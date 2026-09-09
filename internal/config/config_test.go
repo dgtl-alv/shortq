@@ -4,7 +4,9 @@ import "testing"
 
 func validConfig() Config {
 	return Config{
+		DatabaseURL:   "postgres://example.invalid/shortq",
 		JWTSecret:     "01234567890123456789012345678901",
+		SuperEmail:    "admin@example.invalid",
 		SuperPassword: "a-strong-admin-password",
 		OIDCTenantID:  "tenant", OIDCClientID: "client", OIDCClientSecret: "secret",
 		OIDCRedirectURL: "https://example.com/callback", OIDCAllowedDomain: "example.com",

@@ -1,0 +1,7 @@
+# Compliance-sensitive files require repository-owner review.
+/.github/ @dgtl-alv
+/scripts/ @dgtl-alv
+/Dockerfile @dgtl-alv
+/docker-compose*.yml @dgtl-alv
+/.dockerignore @dgtl-alv
+/internal/config/ @dgtl-alv

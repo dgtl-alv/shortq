@@ -1,10 +1,25 @@
+# Source control and automation metadata
+.git
+.github
+.gitignore
+
+# Secrets and local configuration
 .env
 .env.*
 !.env.example
-.git
-.gitignore
+*.pem
+*.key
+*.crt
+**/secrets*
+
+# Local/build artifacts
 *.log
 server
+coverage*
+*.out
+.tmp
+
+# Runtime/deployment-only files
 docker-compose*.yml
 scripts
 internal/**/*_test.go
