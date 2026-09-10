@@ -1,13 +1,19 @@
-name: CI
+name: PR validation
 
 on:
   workflow_call:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    name: test
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -15,55 +21,40 @@ jobs:
         env:
           POSTGRES_DB: shortq_test
           POSTGRES_USER: shortq
-          POSTGRES_PASSWORD: shortqpass
-        ports:
-          - 5432:5432
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U shortq -d shortq_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
+          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
-      TEST_DATABASE_URL: postgres://shortq:shortqpass@127.0.0.1:5432/shortq_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://shortq:ci-only-password@127.0.0.1:5432/shortq_test?sslmode=disable
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.1.0
         with:
-          go-version: '1.23'
+          go-version: "1.23"
           cache: true
-
-      - name: Check gofmt
-        run: |
-          files="$(gofmt -l $(find . -name '*.go' -not -path './.git/*'))"
-          if [ -n "$files" ]; then
-            echo "$files"
-            exit 1
-          fi
-
-      - name: Go test
+      - name: Validate formatting
+        run: test -z "$(gofmt -l $(find . -name '*.go' -not -path './.git/*'))"
+      - name: Test
         run: go test ./...
-
-      - name: Check JavaScript syntax
+      - name: Vet
+        run: go vet ./...
+      - name: Validate JavaScript
         run: node --check web/app.js
-
+      - name: Validate deployment scripts
+        run: bash -n scripts/*.sh
+      - name: Validate Compose
+        env:
+          DATABASE_URL: postgres://shortq:ci-only-password@db:5432/shortq?sslmode=disable
+          POSTGRES_DB: shortq
+          POSTGRES_USER: shortq
+          POSTGRES_PASSWORD: ci-only-password
+          JWT_SECRET: ci-session-secret-at-least-32-characters
+          SUPERADMIN_EMAIL: "[EMAIL_HASH:5e693925f035]"
+          SUPERADMIN_PASSWORD: ci-password-at-least-16
+        run: |
+          touch .env
+          docker compose config --quiet
       - name: Check whitespace
         run: git diff --check
-
-      - name: Validate Docker Compose
-        run: |
-          cat > .env <<'EOF'
-          DATABASE_URL=postgres://shortq:shortqpass@db:5432/shortq?sslmode=disable
-          APP_BASE_URL=http://localhost:8080
-          JWT_SECRET=ci-session-secret-at-least-32-characters
-          SUPERADMIN_EMAIL=ci@example.com
-          SUPERADMIN_PASSWORD=ci-password-at-least-16
-          OIDC_ISSUER_URL=https://login.microsoftonline.com/common/v2.0
-          OIDC_CLIENT_ID=ci-client-id
-          OIDC_CLIENT_SECRET=ci-client-secret
-          OIDC_REDIRECT_URL=http://localhost:8080/auth/microsoft/callback
-          EOF
-          docker compose -f docker-compose.yml config --quiet
-          rm -f .env

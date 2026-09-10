@@ -1,54 +1,52 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
-DEPLOY_ENV="${SHORTQ_DEPLOY_ENV:?SHORTQ_DEPLOY_ENV is required}"
-DEPLOY_REF="${SHORTQ_DEPLOY_REF:?SHORTQ_DEPLOY_REF is required}"
+: "${APP_DIR:?APP_DIR is required}"
+: "${DEPLOY_SHA:?DEPLOY_SHA is required}"
+: "${COMPOSE_FILE:?COMPOSE_FILE is required}"
+: "${PROJECT_NAME:?PROJECT_NAME is required}"
+: "${HEALTH_URL:?HEALTH_URL is required}"
 
-case "$DEPLOY_ENV:$DEPLOY_REF" in
-  staging:main)
-    APP_DIR="${SHORTQ_APP_DIR:-/opt/alva/apps/staging/shortq}"
-    COMPOSE_FILE="docker-compose.staging.yml"
-    PROJECT_NAME="shortq-staging"
-    LOCAL_HEALTH="${SHORTQ_HEALTH_URL:-http://127.0.0.1:8000/healthz}"
-    ;;
-  production:prod-*)
-    APP_DIR="${SHORTQ_APP_DIR:-/opt/alva/apps/prod/shortq}"
-    COMPOSE_FILE="docker-compose.production.yml"
-    PROJECT_NAME="shortq-production"
-    LOCAL_HEALTH="${SHORTQ_HEALTH_URL:-http://127.0.0.1:8000/healthz}"
-    ;;
-  *)
-    printf 'shortq deploy: ref %s cannot deploy to %s\n' "$DEPLOY_REF" "$DEPLOY_ENV" >&2
-    exit 1
-    ;;
+case "$APP_DIR" in
+  /opt/alva/apps/staging/shortq|/opt/alva/apps/prod/shortq) ;;
+  *) printf 'refusing unsafe APP_DIR: %s\n' "$APP_DIR" >&2; exit 64 ;;
 esac
+[[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { printf 'DEPLOY_SHA must be a full commit SHA\n' >&2; exit 64; }
+[[ "$COMPOSE_FILE" != */* && "$COMPOSE_FILE" == docker-compose*.yml ]] || { printf 'invalid COMPOSE_FILE\n' >&2; exit 64; }
+[[ "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { printf 'invalid PROJECT_NAME\n' >&2; exit 64; }
+[[ "$HEALTH_URL" =~ ^http://127\.0\.0\.1:[0-9]+/healthz$ ]] || { printf 'invalid HEALTH_URL\n' >&2; exit 64; }
 
-if docker compose version >/dev/null 2>&1; then
-  COMPOSE=(docker compose)
-elif docker-compose version >/dev/null 2>&1; then
-  COMPOSE=(docker-compose)
-else
-  printf 'shortq deploy: Docker Compose not found\n' >&2
+cd -- "$APP_DIR"
+[[ "$(pwd -P)" == "$APP_DIR" ]] || { printf 'APP_DIR symlink/path mismatch\n' >&2; exit 64; }
+command -v git >/dev/null && command -v docker >/dev/null && command -v curl >/dev/null
+docker compose version >/dev/null
+
+git fetch --no-tags origin "$DEPLOY_SHA"
+git cat-file -e "$DEPLOY_SHA^{commit}"
+previous_sha="$(git rev-parse HEAD 2>/dev/null || true)"
+previous_tag="$(cat .active-production-tag 2>/dev/null || true)"
+git checkout --detach --force "$DEPLOY_SHA"
+test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+
+deploy() {
+  docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" config --quiet
+  docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build --remove-orphans
+  for _ in $(seq 1 30); do curl --fail --silent --show-error "$HEALTH_URL" >/dev/null && return 0; sleep 2; done
+  return 1
+}
+
+if ! deploy; then
+  printf 'health check failed; rolling back\n' >&2
+  if [[ "$previous_sha" =~ ^[0-9a-f]{40}$ ]]; then
+    git checkout --detach --force "$previous_sha"
+    deploy || { printf 'rollback failed\n' >&2; exit 1; }
+    [[ -z "$previous_tag" ]] || printf '%s\n' "$previous_tag" > .active-production-tag
+  fi
   exit 1
 fi
 
-cd "$APP_DIR"
-printf 'shortq deploy: fetch %s\n' "$DEPLOY_REF"
-if [ "$DEPLOY_REF" = main ]; then
-  git fetch --prune origin main
-  DEPLOY_COMMIT="origin/main"
-else
-  git fetch --force origin "refs/tags/$DEPLOY_REF:refs/tags/$DEPLOY_REF"
-  DEPLOY_COMMIT="refs/tags/$DEPLOY_REF"
+if [[ -n "${DEPLOY_TAG:-}" ]]; then
+  [[ "$DEPLOY_TAG" =~ ^prod-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+$ ]] || { printf 'invalid DEPLOY_TAG\n' >&2; exit 64; }
+  printf '%s\n' "$DEPLOY_TAG" > .active-production-tag
 fi
-
-git reset --hard "$DEPLOY_COMMIT"
-"${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" config --quiet
-"${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build
-
-for _ in $(seq 1 30); do
-  curl -fsS "$LOCAL_HEALTH" && exit 0
-  sleep 2
-done
-printf 'shortq deploy: health failed\n' >&2
-exit 1
+printf 'deployed %s\n' "$DEPLOY_SHA"
