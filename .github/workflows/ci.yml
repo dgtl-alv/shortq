@@ -51,8 +51,10 @@ jobs:
           POSTGRES_USER: shortq
           POSTGRES_PASSWORD: ci-only-password
           JWT_SECRET: ci-session-secret-at-least-32-characters
-          SUPERADMIN_EMAIL: ci@example.invalid
+          SUPERADMIN_EMAIL: "[EMAIL_HASH:5e693925f035]"
           SUPERADMIN_PASSWORD: ci-password-at-least-16
-        run: docker compose config --quiet
+        run: |
+          touch .env
+          docker compose config --quiet
       - name: Check whitespace
         run: git diff --check
