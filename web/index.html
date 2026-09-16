@@ -197,7 +197,7 @@
       </section>
       <section id="auditPanel" class="card" hidden>
         <div class="card-title"><div><p class="eyebrow">Security</p><h2>Audit log</h2></div><button class="secondary" onclick="loadAuditEvents()">Refresh</button></div>
-        <form id="auditFilters" class="form-grid" onsubmit="event.preventDefault(); loadAuditEvents()">
+        <form id="auditFilters" class="form-grid" onsubmit="filterAuditEvents(event)">
           <label>Actor email<input name="actor" type="email" placeholder="user@alvaauto.com"></label>
           <label>Action<input name="action" placeholder="link.deleted"></label>
           <label>Target type<select name="target_type"><option value="">all</option><option>link</option><option>domain</option><option>api_key</option><option>user</option></select></label>
@@ -206,6 +206,19 @@
           <button type="submit">Filter</button>
         </form>
         <div id="auditEvents" class="list small">Loading audit events...</div>
+        <div class="pagination" aria-label="Audit log pagination">
+          <label>Rows per page
+            <select id="auditPageSize" onchange="changeAuditPageSize()">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+            </select>
+          </label>
+          <span id="auditPageNumber" aria-live="polite">Page 1</span>
+          <button id="auditPrevious" type="button" class="secondary" onclick="previousAuditPage()" disabled>Previous</button>
+          <button id="auditNext" type="button" class="secondary" onclick="nextAuditPage()" disabled>Next</button>
+        </div>
       </section>
       </div>
       </div>

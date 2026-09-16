@@ -2,6 +2,9 @@ const $ = s => document.querySelector(s);
 let currentUser = null;
 let tenantCache = [];
 let linkCache = [];
+let auditCursor = '';
+let auditCursorHistory = [];
+let auditNextCursor = 0;
 
 function showMsg(x, type = 'error') {
   const el = $('#msg');
@@ -100,7 +103,9 @@ async function loadLinks() {
       <div>
         <b>${esc(x.title || x.slug)}</b>
         <a href="${esc(x.short_url)}" target="_blank" rel="noopener">${esc(x.short_url)}</a>
-        <div class="tiny">${esc(x.target_url)} · ${x.clicks} clicks · ${esc(x.visibility === "department" ? "shared with ALVA" : "private")}</div>
+        <div class="tiny">${x.clicks} clicks · ${esc(x.visibility === "department" ? "shared with ALVA" : "private")}</div>
+        <div class="tiny original-url">${esc(x.target_url)}</div>
+        <button type="button" class="url-toggle" aria-expanded="false" onclick="toggleTargetURL(this)">Show full URL</button>
         ${x.creator_name ? `<div class="tiny">Created by ${esc(x.creator_name)} &middot; ${esc(x.creator_email)}</div>` : ''}
       </div>
       <button class="secondary" onclick="openLinkReport(${x.id})">Report</button>
@@ -108,6 +113,13 @@ async function loadLinks() {
       <button class="secondary" onclick="qrForLink(${x.id})">QR</button>
       ${canManageLink(x) ? (currentUser && currentUser.can_delete ? `<button class="danger" onclick="delLink(${x.id})">Delete</button>` : '<button class="danger" disabled title="Deletion access must be activated by a superadmin">Delete locked</button>') : ''}
     </div>`).join('') || '<div class="empty">No links yet. Create first link above.</div>';
+}
+
+function toggleTargetURL(button) {
+  const url = button.previousElementSibling;
+  const expanded = url.classList.toggle('expanded');
+  button.textContent = expanded ? 'Hide full URL' : 'Show full URL';
+  button.setAttribute('aria-expanded', String(expanded));
 }
 
 function linkPayloadFromForm(form, creating = false) {
@@ -293,12 +305,48 @@ async function setDeletionAccess(id, enabled) {
   try { await api(`/api/v1/customers/${id}/deletion-access`, { method: 'PATCH', body: JSON.stringify({ enabled }) }); showMsg('Deletion access updated.', 'ok'); await Promise.all([loadCustomers(), loadAuditEvents()]); } catch (x) { showMsg(x); }
 }
 
+function resetAuditPagination() {
+  auditCursor = '';
+  auditCursorHistory = [];
+  auditNextCursor = 0;
+}
+
+function filterAuditEvents(e) {
+  e.preventDefault();
+  resetAuditPagination();
+  loadAuditEvents();
+}
+
+function changeAuditPageSize() {
+  resetAuditPagination();
+  loadAuditEvents();
+}
+
+function nextAuditPage() {
+  if (!auditNextCursor) return;
+  auditCursorHistory.push(auditCursor);
+  auditCursor = String(auditNextCursor);
+  loadAuditEvents();
+}
+
+function previousAuditPage() {
+  if (!auditCursorHistory.length) return;
+  auditCursor = auditCursorHistory.pop();
+  loadAuditEvents();
+}
+
 async function loadAuditEvents() {
   if (!currentUser || currentUser.role !== 'superadmin') return;
   $('#auditPanel').hidden = false;
-  const query = new URLSearchParams(Object.fromEntries(new FormData($('#auditFilters')).entries())); query.set('limit', '100');
+  const query = new URLSearchParams(Object.fromEntries(new FormData($('#auditFilters')).entries()));
+  query.set('limit', $('#auditPageSize').value);
+  if (auditCursor) query.set('cursor', auditCursor);
   const page = await api('/api/v1/audit-events?' + query.toString()) || { items: [] };
+  auditNextCursor = page.next_cursor || 0;
   $('#auditEvents').innerHTML = (page.items || []).map(e => `<div class="row no-actions"><div><b>${esc(e.action)} · ${esc(e.outcome)}</b><div class="tiny">${new Date(e.created_at).toLocaleString()} · ${esc(e.actor_email)} via ${esc(e.auth_type)} · ${esc(e.target_type)} ${esc(e.target_id)} · ${esc(e.ip_address || '-')}</div></div></div>`).join('') || '<div class="empty">No matching audit events.</div>';
+  $('#auditPageNumber').textContent = `Page ${auditCursorHistory.length + 1}`;
+  $('#auditPrevious').disabled = auditCursorHistory.length === 0;
+  $('#auditNext').disabled = !auditNextCursor;
 }
 async function createCustomer(e) {
   e.preventDefault();
@@ -344,8 +392,14 @@ async function loadClicks() {
 
 async function loadRuntimeInfo() {
   if (!currentUser || currentUser.role !== 'superadmin' || currentUser.dashboard_mode !== 'admin') return;
+  let info;
+  try {
+    info = await api('/api/v1/admin/runtime');
+  } catch {
+    $('#runtimePanel').hidden = true;
+    return;
+  }
   $('#runtimePanel').hidden = false;
-  const info = await api('/api/v1/admin/runtime');
   const fields = [
     ['Database', `${info.database_engine} / ${info.database_name}`],
     ['Server hostname', info.server_hostname],
