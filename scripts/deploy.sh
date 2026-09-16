@@ -20,8 +20,10 @@ cd -- "$APP_DIR"
 [[ "$(pwd -P)" == "$APP_DIR" ]] || { printf 'APP_DIR symlink/path mismatch\n' >&2; exit 64; }
 command -v git >/dev/null && command -v docker >/dev/null && command -v curl >/dev/null
 docker compose version >/dev/null
-export SERVER_HOSTNAME="$(hostname)"
-export DEPLOY_TAG="${DEPLOY_TAG:-unknown}"
+SERVER_HOSTNAME="$(hostname)"
+export SERVER_HOSTNAME
+release_tag="${DEPLOY_TAG:-}"
+export DEPLOY_TAG="${release_tag:-unknown}"
 
 git fetch --no-tags origin "$DEPLOY_SHA"
 git cat-file -e "$DEPLOY_SHA^{commit}"
@@ -47,8 +49,8 @@ if ! deploy; then
   exit 1
 fi
 
-if [[ -n "${DEPLOY_TAG:-}" ]]; then
-  [[ "$DEPLOY_TAG" =~ ^prod-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+$ ]] || { printf 'invalid DEPLOY_TAG\n' >&2; exit 64; }
-  printf '%s\n' "$DEPLOY_TAG" > .active-production-tag
+if [[ -n "$release_tag" ]]; then
+  [[ "$release_tag" =~ ^prod-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+$ ]] || { printf 'invalid DEPLOY_TAG\n' >&2; exit 64; }
+  printf '%s\n' "$release_tag" > .active-production-tag
 fi
 printf 'deployed %s\n' "$DEPLOY_SHA"
