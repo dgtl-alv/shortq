@@ -1,15 +1,17 @@
-name: PR validation
+name: CI
 
 on:
   workflow_call:
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr-${{ github.event.pull_request.number }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -35,7 +37,7 @@ jobs:
           go-version: "1.23"
           cache: true
       - name: Validate formatting
-        run: test -z "$(gofmt -l $(find . -name '*.go' -not -path './.git/*'))"
+        run: test -z "$(find . -name '*.go' -not -path './.git/*' -exec gofmt -l {} +)"
       - name: Test
         run: go test ./...
       - name: Vet
