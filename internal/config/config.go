@@ -27,6 +27,8 @@ type Config struct {
 	SMTPUser          string
 	SMTPPass          string
 	SMTPFrom          string
+	ServerHostname    string
+	DeployTag         string
 }
 
 func Load() Config {
@@ -50,6 +52,8 @@ func Load() Config {
 		SMTPUser:          os.Getenv("SMTP_USER"),
 		SMTPPass:          os.Getenv("SMTP_PASS"),
 		SMTPFrom:          env("SMTP_FROM", "no-reply@localhost"),
+		ServerHostname:    env("SERVER_HOSTNAME", "unknown"),
+		DeployTag:         env("DEPLOY_TAG", "unknown"),
 	}
 }
 

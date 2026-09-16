@@ -47,6 +47,24 @@ func TestAnalyticsResolvedURLStripsSecrets(t *testing.T) {
 	}
 }
 
+func TestDatabaseIdentityDoesNotExposeCredentialsOrHost(t *testing.T) {
+	engine, name := databaseIdentity("postgres://secret-user:secret-pass@db.internal:5432/shortq_prod?sslmode=require")
+	if engine != "postgresql" || name != "shortq_prod" {
+		t.Fatalf("identity = %q/%q", engine, name)
+	}
+}
+
+func TestAdminRuntimeRejectsNonSuperadmin(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/runtime", nil)
+	req = req.WithContext(withPrincipal(req.Context(), effectivePrincipal(models.User{ID: 7, Role: "customer", Active: true}, "user", "session")))
+	res := httptest.NewRecorder()
+	h.adminRuntime(res, req)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	res := httptest.NewRecorder()
 	securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })).ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))

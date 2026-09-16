@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -71,6 +72,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/customers", h.withAuth(h.customers))
 	mux.HandleFunc("/api/v1/customers/", h.withAuth(h.customerByID))
 	mux.HandleFunc("/api/v1/audit-events", h.withAuth(h.auditEvents))
+	mux.HandleFunc("/api/v1/admin/runtime", h.withAuth(h.adminRuntime))
 	mux.HandleFunc("/api/v1/links", h.withAuth(h.links))
 	mux.HandleFunc("/api/v1/links/page", h.withAuth(h.linksPage))
 	mux.HandleFunc("/api/v1/links/import", h.withAuth(h.importLinks))
@@ -120,6 +122,49 @@ func isReservedRootPath(path string) bool {
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, 200, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) adminRuntime(w http.ResponseWriter, r *http.Request) {
+	p, _ := principalFrom(r.Context())
+	if p.Effective.Role != "superadmin" {
+		errOut(w, http.StatusForbidden, "superadmin only")
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	databaseEngine, databaseName := databaseIdentity(h.C.DatabaseURL)
+	containerID, err := os.Hostname()
+	if err != nil || strings.TrimSpace(containerID) == "" {
+		containerID = "unknown"
+	}
+	jsonOut(w, http.StatusOK, map[string]string{
+		"database_engine": databaseEngine,
+		"database_name":   databaseName,
+		"server_hostname": h.C.ServerHostname,
+		"container_id":    containerID,
+		"deploy_tag":      h.C.DeployTag,
+	})
+}
+
+func databaseIdentity(raw string) (string, string) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "unknown", "unknown"
+	}
+	engine := strings.ToLower(strings.TrimSpace(u.Scheme))
+	if engine == "postgres" {
+		engine = "postgresql"
+	}
+	name := strings.Trim(strings.TrimSpace(u.Path), "/")
+	if engine == "" {
+		engine = "unknown"
+	}
+	if name == "" {
+		name = "unknown"
+	}
+	return engine, name
 }
 func (h *Handler) openapi(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
