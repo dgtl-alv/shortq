@@ -44,7 +44,7 @@ jobs:
           DEPLOY_SHA: ${{ needs.validate-tag.outputs.sha }}
           DEPLOY_TAG: ${{ github.ref_name }}
           APP_DIR: /opt/alva/apps/prod/shortq
-          COMPOSE_FILE: docker-compose.yml
+          COMPOSE_FILE: docker-compose.production.yml
           PROJECT_NAME: shortq
-          HEALTH_URL: http://127.0.0.1:8080/healthz
+          HEALTH_URL: http://127.0.0.1:8000/healthz
         run: scripts/deploy.sh
