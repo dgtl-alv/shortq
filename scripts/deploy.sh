@@ -20,6 +20,8 @@ cd -- "$APP_DIR"
 [[ "$(pwd -P)" == "$APP_DIR" ]] || { printf 'APP_DIR symlink/path mismatch\n' >&2; exit 64; }
 command -v git >/dev/null && command -v docker >/dev/null && command -v curl >/dev/null
 docker compose version >/dev/null
+export SERVER_HOSTNAME="$(hostname)"
+export DEPLOY_TAG="${DEPLOY_TAG:-unknown}"
 
 git fetch --no-tags origin "$DEPLOY_SHA"
 git cat-file -e "$DEPLOY_SHA^{commit}"

@@ -149,6 +149,11 @@
       </section>
 
       <div id="adminSection" hidden>
+      <section id="runtimePanel" class="card" hidden>
+        <div class="card-title"><div><p class="eyebrow">Troubleshooting</p><h2>Runtime information</h2></div><button class="secondary" onclick="loadRuntimeInfo()">Refresh</button></div>
+        <p class="muted">Non-secret deployment and database identity.</p>
+        <div id="runtimeInfo" class="stats"></div>
+      </section>
       <section id="tenantPanel" class="card" hidden>
         <div class="card-title">
           <div>

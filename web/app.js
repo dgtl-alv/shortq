@@ -342,6 +342,28 @@ async function loadClicks() {
   $('#clicks').innerHTML = (page.items || []).map(x => `<div class="row no-actions"><div><b>/${esc(x.slug)}</b><div class="tiny">${new Date(x.created_at).toLocaleString()} · ${esc(x.country_code || 'unknown')} · ${esc(x.device)} · ${esc(x.browser)} · ${esc(x.route_type)} → ${x.status_code}</div></div></div>`).join('') || '<div class="empty">No click events yet.</div>';
 }
 
+async function loadRuntimeInfo() {
+  if (!currentUser || currentUser.role !== 'superadmin' || currentUser.dashboard_mode !== 'admin') return;
+  $('#runtimePanel').hidden = false;
+  const info = await api('/api/v1/admin/runtime');
+  const fields = [
+    ['Database', `${info.database_engine} / ${info.database_name}`],
+    ['Server hostname', info.server_hostname],
+    ['Container ID', info.container_id],
+    ['Deployed tag', info.deploy_tag]
+  ];
+  const panel = $('#runtimeInfo');
+  panel.replaceChildren(...fields.map(([label, value]) => {
+    const item = document.createElement('div');
+    const strong = document.createElement('b');
+    const caption = document.createElement('span');
+    strong.textContent = value || 'unknown';
+    caption.textContent = label;
+    item.append(strong, caption);
+    return item;
+  }));
+}
+
 async function renderDashboard() {
   showApp();
   renderDashboardMode();
@@ -351,9 +373,10 @@ async function renderDashboard() {
   $('#domainPanel').hidden = true;
   $('#customerPanel').hidden = true;
   $('#auditPanel').hidden = true;
+  $('#runtimePanel').hidden = true;
   await loadTenants();
   setupCustomerForm();
-  const tasks = [loadStats(), loadLinks(), loadKeys(), loadCustomers(), loadDomains(), loadClicks(), loadAuditEvents()];
+  const tasks = [loadStats(), loadLinks(), loadKeys(), loadCustomers(), loadDomains(), loadClicks(), loadAuditEvents(), loadRuntimeInfo()];
   const results = await Promise.allSettled(tasks);
   const failed = results.find(r => r.status === 'rejected');
   if (failed) showMsg(failed.reason);
