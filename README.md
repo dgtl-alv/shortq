@@ -14,7 +14,7 @@ Open `http://localhost:8080`.
 Internal deployment should use:
 
 ```env
-APP_BASE_URL=https://internal.alvaauto.com
+APP_BASE_URL=https://s.ilectraev.com
 ```
 
 Default superadmin from `.env`:
