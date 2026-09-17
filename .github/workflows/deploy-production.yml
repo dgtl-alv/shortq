@@ -3,7 +3,7 @@ name: Deploy production
 on:
   push:
     tags:
-      - prod-????-??-??-*
+      - 'prod-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*'
 
 permissions:
   contents: read
