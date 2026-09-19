@@ -1,7 +1,7 @@
 # ShortQ Redirect Cache and Durable Analytics Plan
 
-Status: PR 1 analytics idempotency, PR 2 Redis redirect cache, and PR 3 RabbitMQ publisher implemented; later phases not started
-Baseline: `main` at `c73f1ec`
+Status: PR 1 analytics idempotency, PR 2 Redis redirect cache, PR 3 RabbitMQ publisher, and PR 4 analytics worker implemented; PR 5 not started
+Baseline: `main` at `5be08e5`
 Owner: ALVA Digital
 Last updated: 2026-09-19
 
@@ -145,17 +145,17 @@ Goal: consume queued events safely and efficiently.
 
 Tasks:
 
-- [ ] Add explicit CLI command dispatch and `analytics-worker` command.
-- [ ] Declare topology on startup.
-- [ ] Consume with manual ACK and prefetch 400.
-- [ ] Batch up to 200 events or 250 ms.
-- [ ] Validate schema version and required fields.
-- [ ] Persist through PR 1 batch API.
-- [ ] ACK only after PostgreSQL commit.
-- [ ] On transient DB error, retry with bounded backoff.
-- [ ] Track retry count through retry queues/headers; send to DLQ after five failures.
-- [ ] Reject unsupported/invalid payload to DLQ without immediate infinite requeue.
-- [ ] Add worker metrics: batch size/duration, duplicates, failures, retries, DLQ, lag.
+- [x] Add explicit CLI command dispatch and `analytics-worker` command.
+- [x] Declare topology on startup.
+- [x] Consume with manual ACK and prefetch 400.
+- [x] Batch up to 200 events or 250 ms.
+- [x] Validate schema version and required fields.
+- [x] Persist through PR 1 batch API.
+- [x] ACK only after PostgreSQL commit.
+- [x] On transient DB error, retry with bounded backoff.
+- [x] Track retry count through retry queues/headers; send to DLQ after five failures.
+- [x] Reject unsupported/invalid payload to DLQ without immediate infinite requeue.
+- [x] Add worker metrics: batch size/duration, duplicates, failures, retries, DLQ, lag.
 
 Acceptance gate:
 
@@ -228,3 +228,4 @@ For integration phases, also run dedicated PostgreSQL/Redis/RabbitMQ suites and 
 - 2026-09-19: PR 1 implemented on `feature/analytics-idempotency`: nullable UUID event identity, partial unique index, synchronous and batch idempotency, UTC occurred-at rollups, transactional counters, rollback protection, max-click preservation, and expired/null compatibility. Validation passed with Go 1.25.13 and PostgreSQL 17-alpine: `gofmt`, `go test -count=1 ./...`, `go vet ./...`, Docker Compose v5.5.1 `config --quiet`, PostgreSQL integration tests, and `git diff --check`.
 - 2026-09-19: PR 2 recovered and completed on `feature/redirect-cache`: disabled-by-default Redis cache-aside resolution, versioned minimal redirect DTO, exact 24-hour TTL, bounded operation/retry timing, PostgreSQL fallback, password and `max_clicks` bypass, post-commit invalidation across base/custom hosts and domain changes, cache metrics, and Redis CI integration. Validation passed with Go 1.25.13, Redis 7.4-alpine (`sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7`), PostgreSQL 17-alpine, and Docker Compose v2.33.0: `gofmt`, `go test ./...`, `go vet ./...`, Redis/PostgreSQL integration tests, merged Compose `config --no-interpolate --quiet`, and `git diff --check`.
 - 2026-09-19: PR 3 implemented on `feature/click-publisher`: disabled-by-default RabbitMQ publishing, versioned privacy-allowlisted payload, persistent delivery to durable exchange/queue with DLX/DLQ, required publisher confirms, bounded reconnect and confirm timing on one concurrency-safe long-lived channel, same-ID synchronous fallback for definite and ambiguous outcomes, synchronous `max_clicks` bypass including expired attempts, metrics/logging, and RabbitMQ CI integration. Validation passed with Go 1.25.13, PostgreSQL 17-alpine, Redis 7.4-alpine, RabbitMQ 4.1.4-alpine (`sha256:b736d649308e1b3e1a116c3f36986b605ee3d03e88f10166be2900083d2e63f2`), and Docker Compose v2.40.3: `gofmt`, `go test -count=1 ./...`, `go vet ./...`, PostgreSQL/Redis/RabbitMQ integrations, base/staging/production Compose `config --no-interpolate --quiet`, and `git diff --check`.
+- 2026-09-19: PR 4 implemented on `feature/analytics-worker`: explicit `analytics-worker` CLI dispatch, manual-ACK/prefetch-400 RabbitMQ consumer, 200-event/250ms transactional batches through `Store.RecordClicks`, strict versioned payload validation, commit-before-ACK behavior, duplicate accounting, bounded confirmed retry-queue backoff using `x-shortq-retry-count`, fifth-failure/poison DLQ routing, bounded graceful drain, privacy-safe logs, and worker batch/lag metrics. Validation passed in Docker with Go 1.25.3, PostgreSQL 17-alpine, Redis 7.4-alpine, RabbitMQ 4.1.4-alpine (`sha256:b736d649308e1b3e1a116c3f36986b605ee3d03e88f10166be2900083d2e63f2`), and Docker Compose v5.5.1: formatting, `go test -count=1 ./...`, dedicated RabbitMQ/PostgreSQL worker integration tests, `go vet ./...`, base/override/staging/production Compose validation, and `git diff --check`.
