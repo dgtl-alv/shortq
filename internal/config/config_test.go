@@ -70,3 +70,16 @@ func TestRedirectCacheDefaultsDisabled(t *testing.T) {
 		t.Fatalf("Redis defaults: URL=%q timeout=%s", c.RedisURL, c.RedirectCacheTimeout)
 	}
 }
+
+func TestClickQueueDefaultsDisabled(t *testing.T) {
+	t.Setenv("CLICK_QUEUE_ENABLED", "")
+	t.Setenv("RABBITMQ_URL", "")
+	t.Setenv("CLICK_QUEUE_CONFIRM_TIMEOUT", "")
+	c := Load()
+	if c.ClickQueueEnabled {
+		t.Fatal("click queue must default to disabled")
+	}
+	if c.RabbitMQURL != "amqp://rabbitmq:5672/" || c.ClickQueueConfirmTimeout != 250*time.Millisecond {
+		t.Fatalf("RabbitMQ defaults: URL=%q timeout=%s", c.RabbitMQURL, c.ClickQueueConfirmTimeout)
+	}
+}

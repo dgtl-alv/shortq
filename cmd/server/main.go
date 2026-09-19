@@ -9,6 +9,7 @@ import (
 	_ "time/tzdata" // Embed IANA zones for the minimal production image.
 
 	"shortq/internal/auth"
+	"shortq/internal/clickqueue"
 	"shortq/internal/config"
 	"shortq/internal/db"
 	"shortq/internal/handlers"
@@ -82,7 +83,19 @@ func main() {
 			}
 		}
 	}
-	h := handlers.NewWithRedirectCache(cfg, st, os.DirFS("web"), resolver, cacheMetrics)
+	var clickPublisher clickqueue.Publisher
+	var clickMetrics *clickqueue.Metrics
+	if cfg.ClickQueueEnabled {
+		clickMetrics = &clickqueue.Metrics{}
+		publisher, err := clickqueue.NewRabbitMQPublisher(cfg.RabbitMQURL, cfg.ClickQueueConfirmTimeout, clickMetrics)
+		if err != nil {
+			log.Printf("click_queue event=configuration_error fallback=postgresql: %v", err)
+		} else {
+			defer publisher.Close()
+			clickPublisher = publisher
+		}
+	}
+	h := handlers.NewWithInfrastructure(cfg, st, os.DirFS("web"), resolver, cacheMetrics, clickPublisher, clickMetrics)
 	log.Printf("shortq listening on %s", cfg.Addr)
 	server := &http.Server{
 		Addr:              cfg.Addr,

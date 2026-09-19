@@ -30,6 +30,7 @@ import (
 	"github.com/skip2/go-qrcode"
 
 	"shortq/internal/auth"
+	"shortq/internal/clickqueue"
 	"shortq/internal/config"
 	"shortq/internal/models"
 	"shortq/internal/redirectcache"
@@ -37,23 +38,35 @@ import (
 )
 
 type Handler struct {
-	C            config.Config
-	S            *store.Store
-	Web          fs.FS
-	attemptMu    sync.Mutex
-	attempts     map[string][]time.Time
-	attemptOps   uint64
-	qrSlots      chan struct{}
-	redirects    *redirectcache.Resolver
-	cacheMetrics *redirectcache.Metrics
+	C             config.Config
+	S             *store.Store
+	Web           fs.FS
+	attemptMu     sync.Mutex
+	attempts      map[string][]time.Time
+	attemptOps    uint64
+	qrSlots       chan struct{}
+	redirects     *redirectcache.Resolver
+	cacheMetrics  *redirectcache.Metrics
+	clickRecorder *clickqueue.Recorder
+	clickMetrics  *clickqueue.Metrics
+	clickQueue    bool
 }
 
 func New(c config.Config, s *store.Store, web fs.FS) *Handler {
-	return NewWithRedirectCache(c, s, web, nil, nil)
+	return NewWithInfrastructure(c, s, web, nil, nil, nil, nil)
 }
 
 func NewWithRedirectCache(c config.Config, s *store.Store, web fs.FS, redirects *redirectcache.Resolver, metrics *redirectcache.Metrics) *Handler {
-	return &Handler{C: c, S: s, Web: web, attempts: map[string][]time.Time{}, qrSlots: make(chan struct{}, 2), redirects: redirects, cacheMetrics: metrics}
+	return NewWithInfrastructure(c, s, web, redirects, metrics, nil, nil)
+}
+
+func NewWithInfrastructure(c config.Config, s *store.Store, web fs.FS, redirects *redirectcache.Resolver, cacheMetrics *redirectcache.Metrics, publisher clickqueue.Publisher, clickMetrics *clickqueue.Metrics) *Handler {
+	return &Handler{
+		C: c, S: s, Web: web, attempts: map[string][]time.Time{}, qrSlots: make(chan struct{}, 2),
+		redirects: redirects, cacheMetrics: cacheMetrics,
+		clickRecorder: clickqueue.NewRecorder(publisher, s, clickMetrics), clickMetrics: clickMetrics,
+		clickQueue: publisher != nil,
+	}
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -156,9 +169,13 @@ func (h *Handler) adminRuntime(w http.ResponseWriter, r *http.Request) {
 		"container_id":           containerID,
 		"deploy_tag":             h.C.DeployTag,
 		"redirect_cache_enabled": h.redirects != nil,
+		"click_queue_enabled":    h.clickQueue,
 	}
 	if h.cacheMetrics != nil {
 		response["redirect_cache"] = h.cacheMetrics.Snapshot()
+	}
+	if h.clickMetrics != nil {
+		response["click_queue"] = h.clickMetrics.Snapshot()
 	}
 	jsonOut(w, http.StatusOK, response)
 }
@@ -1735,7 +1752,7 @@ func (h *Handler) redirectSlug(w http.ResponseWriter, r *http.Request, slug stri
 	}
 	target, route := resolveTarget(l, countryFromRequest(r), r.UserAgent())
 	target = mergeTargetQuery(target, l, r.URL.Query())
-	ok, err := h.S.RecordClick(h.redirectEvent(r, l, target, route, l.RedirectCode), true, l.MaxClicks)
+	ok, err := h.recordClick(r.Context(), h.redirectEvent(r, l, target, route, l.RedirectCode), true, l.MaxClicks)
 	if err != nil {
 		errOut(w, http.StatusInternalServerError, "redirect tracking failed")
 		return
@@ -2025,7 +2042,14 @@ func analyticsResolvedURL(raw string) string {
 }
 
 func (h *Handler) recordRedirectEvent(r *http.Request, l models.Link, target, route string, status int, increment bool) {
-	_, _ = h.S.RecordClick(h.redirectEvent(r, l, target, route, status), increment, nil)
+	_, _ = h.recordClick(r.Context(), h.redirectEvent(r, l, target, route, status), increment, l.MaxClicks)
+}
+
+func (h *Handler) recordClick(ctx context.Context, event models.ClickEvent, increment bool, maxClicks *int64) (bool, error) {
+	if h.clickRecorder != nil {
+		return h.clickRecorder.Record(ctx, event, increment, maxClicks)
+	}
+	return h.S.RecordClick(event, increment, maxClicks)
 }
 
 func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {
