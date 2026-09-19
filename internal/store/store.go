@@ -791,6 +791,14 @@ func (s *Store) RecordClick(event models.ClickEvent, increment bool, maxClicks *
 		return false, err
 	}
 	defer tx.Rollback()
+	event.Increment = increment
+	inserted, err := insertClick(tx, event)
+	if err != nil {
+		return false, err
+	}
+	if !inserted {
+		return true, tx.Commit()
+	}
 	if increment {
 		q := `UPDATE links SET clicks=clicks+1 WHERE id=? AND deleted_at IS NULL`
 		args := []any{event.LinkID}
@@ -806,17 +814,82 @@ func (s *Store) RecordClick(event models.ClickEvent, increment bool, maxClicks *
 			return false, tx.Rollback()
 		}
 	}
-	_, err = tx.Exec(`INSERT INTO clicks(link_id,ip,user_agent,referrer,country_code,method,status_code,resolved_url,route_type,browser,os,device,is_bot,referrer_host,utm_source,utm_medium,utm_campaign) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		event.LinkID, event.IP, event.UserAgent, event.Referrer, event.CountryCode, event.Method, event.StatusCode, event.ResolvedURL, event.RouteType, event.Browser, event.OS, event.Device, event.IsBot, event.ReferrerHost, event.UTMSource, event.UTMMedium, event.UTMCampaign)
-	if err != nil {
-		return false, err
-	}
-	_, err = tx.Exec(`INSERT INTO click_rollups_daily(day,link_id,country_code,device,browser,referrer_host,utm_campaign,route_type,status_code,clicks) VALUES(CURRENT_DATE,?,?,?,?,?,?,?,?,1) ON CONFLICT(day,link_id,country_code,device,browser,referrer_host,utm_campaign,route_type,status_code) DO UPDATE SET clicks=click_rollups_daily.clicks+1`,
-		event.LinkID, event.CountryCode, event.Device, event.Browser, event.ReferrerHost, event.UTMCampaign, event.RouteType, event.StatusCode)
-	if err != nil {
+	if err := incrementClickRollup(tx, event); err != nil {
 		return false, err
 	}
 	return true, tx.Commit()
+}
+
+// RecordClicks persists one delivery batch atomically and returns newly inserted event count.
+func (s *Store) RecordClicks(events []models.ClickEvent) (int, error) {
+	if len(events) == 0 {
+		return 0, nil
+	}
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	insertedCount := 0
+	for _, event := range events {
+		inserted, err := insertClick(tx, event)
+		if err != nil {
+			return 0, err
+		}
+		if !inserted {
+			continue
+		}
+		if event.Increment {
+			result, err := tx.Exec(`UPDATE links SET clicks=clicks+1 WHERE id=? AND deleted_at IS NULL AND max_clicks IS NULL`, event.LinkID)
+			if err != nil {
+				return 0, err
+			}
+			affected, err := result.RowsAffected()
+			if err != nil {
+				return 0, err
+			}
+			if affected != 1 {
+				return 0, sql.ErrNoRows
+			}
+		}
+		if err := incrementClickRollup(tx, event); err != nil {
+			return 0, err
+		}
+		insertedCount++
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return insertedCount, nil
+}
+
+func insertClick(tx *transaction, event models.ClickEvent) (bool, error) {
+	if event.OccurredAt.IsZero() {
+		event.OccurredAt = time.Now().UTC()
+	}
+	var id int64
+	err := tx.QueryRow(`INSERT INTO clicks(event_id,link_id,ip,user_agent,referrer,country_code,method,status_code,resolved_url,route_type,browser,os,device,is_bot,referrer_host,utm_source,utm_medium,utm_campaign,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (event_id) WHERE event_id IS NOT NULL DO NOTHING RETURNING id`,
+		nullableString(event.EventID), event.LinkID, event.IP, event.UserAgent, event.Referrer, event.CountryCode, event.Method, event.StatusCode, event.ResolvedURL, event.RouteType, event.Browser, event.OS, event.Device, event.IsBot, event.ReferrerHost, event.UTMSource, event.UTMMedium, event.UTMCampaign, event.OccurredAt).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func incrementClickRollup(tx *transaction, event models.ClickEvent) error {
+	if event.OccurredAt.IsZero() {
+		event.OccurredAt = time.Now().UTC()
+	}
+	_, err := tx.Exec(`INSERT INTO click_rollups_daily(day,link_id,country_code,device,browser,referrer_host,utm_campaign,route_type,status_code,clicks) VALUES((? AT TIME ZONE 'UTC')::date,?,?,?,?,?,?,?,?,1) ON CONFLICT(day,link_id,country_code,device,browser,referrer_host,utm_campaign,route_type,status_code) DO UPDATE SET clicks=click_rollups_daily.clicks+1`,
+		event.OccurredAt, event.LinkID, event.CountryCode, event.Device, event.Browser, event.ReferrerHost, event.UTMCampaign, event.RouteType, event.StatusCode)
+	return err
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func (s *Store) PurgeOldClicks() error {

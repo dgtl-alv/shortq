@@ -96,6 +96,7 @@ type GeoTarget struct {
 
 type ClickEvent struct {
 	ID           int64     `json:"id"`
+	EventID      string    `json:"-"`
 	LinkID       int64     `json:"link_id"`
 	Slug         string    `json:"slug"`
 	IP           string    `json:"ip"`
@@ -114,6 +115,8 @@ type ClickEvent struct {
 	UTMSource    string    `json:"utm_source"`
 	UTMMedium    string    `json:"utm_medium"`
 	UTMCampaign  string    `json:"utm_campaign"`
+	OccurredAt   time.Time `json:"-"`
+	Increment    bool      `json:"-"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 

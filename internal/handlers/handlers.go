@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
@@ -1926,7 +1927,17 @@ func (h *Handler) redirectEvent(r *http.Request, l models.Link, target, route st
 	if destination, err := url.Parse(target); err == nil {
 		values = destination.Query()
 	}
-	return models.ClickEvent{LinkID: l.ID, Slug: l.Slug, IP: visitorIP(r), CountryCode: countryFromRequest(r), Method: r.Method, StatusCode: status, ResolvedURL: analyticsResolvedURL(target), RouteType: route, UserAgent: r.UserAgent(), Browser: browser, OS: osName, Device: device, IsBot: bot, Referrer: r.Referer(), ReferrerHost: refHost, UTMSource: values.Get("utm_source"), UTMMedium: values.Get("utm_medium"), UTMCampaign: values.Get("utm_campaign")}
+	return models.ClickEvent{EventID: newEventID(), LinkID: l.ID, Slug: l.Slug, IP: visitorIP(r), CountryCode: countryFromRequest(r), Method: r.Method, StatusCode: status, ResolvedURL: analyticsResolvedURL(target), RouteType: route, UserAgent: r.UserAgent(), Browser: browser, OS: osName, Device: device, IsBot: bot, Referrer: r.Referer(), ReferrerHost: refHost, UTMSource: values.Get("utm_source"), UTMMedium: values.Get("utm_medium"), UTMCampaign: values.Get("utm_campaign"), OccurredAt: time.Now().UTC()}
+}
+
+func newEventID() string {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		panic("generate analytics event ID: " + err.Error())
+	}
+	value[6] = (value[6] & 0x0f) | 0x40
+	value[8] = (value[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16])
 }
 
 func analyticsResolvedURL(raw string) string {
