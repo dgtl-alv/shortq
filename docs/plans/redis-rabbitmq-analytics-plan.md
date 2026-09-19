@@ -1,6 +1,6 @@
 # ShortQ Redirect Cache and Durable Analytics Plan
 
-Status: PR 1 analytics idempotency foundation and PR 2 Redis redirect cache implemented; later phases not started
+Status: PR 1 analytics idempotency, PR 2 Redis redirect cache, and PR 3 RabbitMQ publisher implemented; later phases not started
 Baseline: `main` at `c73f1ec`
 Owner: ALVA Digital
 Last updated: 2026-09-19
@@ -119,18 +119,18 @@ Goal: publish eligible analytics durably while retaining safe synchronous fallba
 
 Tasks:
 
-- [ ] Add publisher interface and RabbitMQ implementation.
-- [ ] Declare durable exchange `shortq.analytics`, queue `shortq.clicks`, DLX, and DLQ idempotently.
-- [ ] Publish persistent messages with shared `event_id` and short timeout.
-- [ ] Require publisher confirmation.
-- [ ] Reuse long-lived connection/channel strategy; never connect per request.
-- [ ] On definite publish failure, call idempotent synchronous persistence with same `event_id`.
-- [ ] On confirm timeout/ambiguous outcome, call same idempotent fallback; later worker redelivery must no-op.
-- [ ] Keep links with `max_clicks` on synchronous atomic path.
-- [ ] Keep expired-attempt semantics.
-- [ ] Add `CLICK_QUEUE_ENABLED=false` default flag.
-- [ ] Add publish duration, failure, confirmation, and fallback metrics.
-- [ ] Ensure payload excludes authorization headers, cookies, tokens, API keys, and passwords.
+- [x] Add publisher interface and RabbitMQ implementation.
+- [x] Declare durable exchange `shortq.analytics`, queue `shortq.clicks`, DLX, and DLQ idempotently.
+- [x] Publish persistent messages with shared `event_id` and short timeout.
+- [x] Require publisher confirmation.
+- [x] Reuse long-lived connection/channel strategy; never connect per request.
+- [x] On definite publish failure, call idempotent synchronous persistence with same `event_id`.
+- [x] On confirm timeout/ambiguous outcome, call same idempotent fallback; later worker redelivery must no-op.
+- [x] Keep links with `max_clicks` on synchronous atomic path.
+- [x] Keep expired-attempt semantics.
+- [x] Add `CLICK_QUEUE_ENABLED=false` default flag.
+- [x] Add publish duration, failure, confirmation, and fallback metrics.
+- [x] Ensure payload excludes authorization headers, cookies, tokens, API keys, and passwords.
 
 Acceptance gate:
 
@@ -227,3 +227,4 @@ For integration phases, also run dedicated PostgreSQL/Redis/RabbitMQ suites and 
 
 - 2026-09-19: PR 1 implemented on `feature/analytics-idempotency`: nullable UUID event identity, partial unique index, synchronous and batch idempotency, UTC occurred-at rollups, transactional counters, rollback protection, max-click preservation, and expired/null compatibility. Validation passed with Go 1.25.13 and PostgreSQL 17-alpine: `gofmt`, `go test -count=1 ./...`, `go vet ./...`, Docker Compose v5.5.1 `config --quiet`, PostgreSQL integration tests, and `git diff --check`.
 - 2026-09-19: PR 2 recovered and completed on `feature/redirect-cache`: disabled-by-default Redis cache-aside resolution, versioned minimal redirect DTO, exact 24-hour TTL, bounded operation/retry timing, PostgreSQL fallback, password and `max_clicks` bypass, post-commit invalidation across base/custom hosts and domain changes, cache metrics, and Redis CI integration. Validation passed with Go 1.25.13, Redis 7.4-alpine (`sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7`), PostgreSQL 17-alpine, and Docker Compose v2.33.0: `gofmt`, `go test ./...`, `go vet ./...`, Redis/PostgreSQL integration tests, merged Compose `config --no-interpolate --quiet`, and `git diff --check`.
+- 2026-09-19: PR 3 implemented on `feature/click-publisher`: disabled-by-default RabbitMQ publishing, versioned privacy-allowlisted payload, persistent delivery to durable exchange/queue with DLX/DLQ, required publisher confirms, bounded reconnect and confirm timing on one concurrency-safe long-lived channel, same-ID synchronous fallback for definite and ambiguous outcomes, synchronous `max_clicks` bypass including expired attempts, metrics/logging, and RabbitMQ CI integration. Validation passed with Go 1.25.13, PostgreSQL 17-alpine, Redis 7.4-alpine, RabbitMQ 4.1.4-alpine (`sha256:b736d649308e1b3e1a116c3f36986b605ee3d03e88f10166be2900083d2e63f2`), and Docker Compose v2.40.3: `gofmt`, `go test -count=1 ./...`, `go vet ./...`, PostgreSQL/Redis/RabbitMQ integrations, base/staging/production Compose `config --no-interpolate --quiet`, and `git diff --check`.
