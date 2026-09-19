@@ -1,6 +1,6 @@
 # ShortQ Redirect Cache and Durable Analytics Plan
 
-Status: PR 1 analytics idempotency foundation implemented; later phases not started
+Status: PR 1 analytics idempotency foundation and PR 2 Redis redirect cache implemented; later phases not started
 Baseline: `main` at `c73f1ec`
 Owner: ALVA Digital
 Last updated: 2026-09-19
@@ -91,19 +91,19 @@ Goal: reduce PostgreSQL reads while preserving redirect correctness.
 
 Tasks:
 
-- [ ] Add cache interface independent from Redis client.
-- [ ] Add versioned cached redirect DTO; exclude password hashes and analytics data.
-- [ ] Add Redis implementation with default TTL exactly 24 hours.
-- [ ] Add operation timeout and bounded reconnect behavior.
-- [ ] Use key `shortq:redirect:v1:{hostname}:{slug}`.
-- [ ] Bypass cache for password-protected links in first release.
-- [ ] Cache misses load PostgreSQL then populate Redis.
-- [ ] Read/write failures fall back safely.
-- [ ] Invalidate only after successful DB commit.
-- [ ] Invalidate all affected host aliases on link edit/delete, domain changes, routing/geo/device/expiry/query/UTM changes.
-- [ ] Add `REDIRECT_CACHE_ENABLED=false` default flag.
-- [ ] Add hit/miss/error/invalidation metrics.
-- [ ] Add Redis test service in CI and integration tests.
+- [x] Add cache interface independent from Redis client.
+- [x] Add versioned cached redirect DTO; exclude password hashes and analytics data.
+- [x] Add Redis implementation with default TTL exactly 24 hours.
+- [x] Add operation timeout and bounded reconnect behavior.
+- [x] Use key `shortq:redirect:v1:{hostname}:{slug}`.
+- [x] Bypass cache for password-protected links in first release.
+- [x] Cache misses load PostgreSQL then populate Redis.
+- [x] Read/write failures fall back safely.
+- [x] Invalidate only after successful DB commit.
+- [x] Invalidate all affected host aliases on link edit/delete, domain changes, routing/geo/device/expiry/query/UTM changes.
+- [x] Add `REDIRECT_CACHE_ENABLED=false` default flag.
+- [x] Add hit/miss/error/invalidation metrics.
+- [x] Add Redis test service in CI and integration tests.
 
 Acceptance gate:
 
@@ -226,3 +226,4 @@ For integration phases, also run dedicated PostgreSQL/Redis/RabbitMQ suites and 
 - 2026-09-19: Plan approved in principle; implementation not started.
 
 - 2026-09-19: PR 1 implemented on `feature/analytics-idempotency`: nullable UUID event identity, partial unique index, synchronous and batch idempotency, UTC occurred-at rollups, transactional counters, rollback protection, max-click preservation, and expired/null compatibility. Validation passed with Go 1.25.13 and PostgreSQL 17-alpine: `gofmt`, `go test -count=1 ./...`, `go vet ./...`, Docker Compose v5.5.1 `config --quiet`, PostgreSQL integration tests, and `git diff --check`.
+- 2026-09-19: PR 2 recovered and completed on `feature/redirect-cache`: disabled-by-default Redis cache-aside resolution, versioned minimal redirect DTO, exact 24-hour TTL, bounded operation/retry timing, PostgreSQL fallback, password and `max_clicks` bypass, post-commit invalidation across base/custom hosts and domain changes, cache metrics, and Redis CI integration. Validation passed with Go 1.25.13, Redis 7.4-alpine (`sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7`), PostgreSQL 17-alpine, and Docker Compose v2.33.0: `gofmt`, `go test ./...`, `go vet ./...`, Redis/PostgreSQL integration tests, merged Compose `config --no-interpolate --quiet`, and `git diff --check`.

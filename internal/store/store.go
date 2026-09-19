@@ -1518,6 +1518,43 @@ func (s *Store) ActiveDomainForTenant(tenantID *int64) (string, error) {
 	return domain, err
 }
 
+func (s *Store) ActiveDomainAliasesForTenant(tenantID *int64) ([]string, error) {
+	if tenantID == nil {
+		return []string{}, nil
+	}
+	rows, err := s.DB.Query(`SELECT domain FROM tenant_domains WHERE tenant_id=? AND status='active' ORDER BY domain`, *tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var domains []string
+	for rows.Next() {
+		var domain string
+		if err := rows.Scan(&domain); err != nil {
+			return nil, err
+		}
+		domains = append(domains, domain)
+	}
+	return domains, rows.Err()
+}
+
+func (s *Store) ActiveLinkSlugsForTenant(tenantID int64) ([]string, error) {
+	rows, err := s.DB.Query(`SELECT slug FROM links WHERE tenant_id=? AND deleted_at IS NULL ORDER BY id`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var slugs []string
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		slugs = append(slugs, slug)
+	}
+	return slugs, rows.Err()
+}
+
 func (s *Store) ActiveDomainsForTenants(tenantIDs []int64) (map[int64]string, error) {
 	out := map[int64]string{}
 	if len(tenantIDs) == 0 {
