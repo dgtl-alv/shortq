@@ -2,17 +2,41 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/color"
 	"image/draw"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
 
 	"shortq/internal/models"
+	"shortq/internal/redirectcache"
+	"shortq/internal/store"
 )
+
+type redirectRecordingCache struct {
+	deletes []string
+}
+
+func (c *redirectRecordingCache) Get(context.Context, string, string) (redirectcache.CachedRedirect, bool, error) {
+	return redirectcache.CachedRedirect{}, false, nil
+}
+
+func (c *redirectRecordingCache) Set(context.Context, string, string, redirectcache.CachedRedirect, time.Duration) error {
+	return nil
+}
+
+func (c *redirectRecordingCache) Delete(_ context.Context, hostname, slug string) error {
+	c.deletes = append(c.deletes, redirectcache.Key(hostname, slug))
+	return nil
+}
 
 func TestIsReservedRootPath(t *testing.T) {
 	tests := []struct {
@@ -33,6 +57,31 @@ func TestIsReservedRootPath(t *testing.T) {
 		if got := isReservedRootPath(tt.path); got != tt.want {
 			t.Fatalf("isReservedRootPath(%q) = %v, want %v", tt.path, got, tt.want)
 		}
+	}
+}
+
+func TestDomainChangeInvalidatesEveryTenantSlugForChangedHost(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT slug FROM links WHERE tenant_id=$1 AND deleted_at IS NULL ORDER BY id`)).
+		WithArgs(int64(46)).
+		WillReturnRows(sqlmock.NewRows([]string{"slug"}).AddRow("first").AddRow("second"))
+
+	cache := &redirectRecordingCache{}
+	h := &Handler{S: store.New(db), redirects: redirectcache.NewResolver(cache, nil)}
+	h.invalidateDomainRedirects(models.TenantDomain{TenantID: 46, Domain: "Alias.Example."})
+	want := []string{
+		"shortq:redirect:v1:alias.example:first",
+		"shortq:redirect:v1:alias.example:second",
+	}
+	if len(cache.deletes) != len(want) || cache.deletes[0] != want[0] || cache.deletes[1] != want[1] {
+		t.Fatalf("deletes=%v want=%v", cache.deletes, want)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
