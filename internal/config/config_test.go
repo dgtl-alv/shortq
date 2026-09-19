@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func validConfig() Config {
 	return Config{
@@ -52,5 +55,18 @@ func TestValidateRequiresDevAuthEmailWhenBypassEnabled(t *testing.T) {
 	c.DevAuthEmail = ""
 	if err := Validate(c); err == nil {
 		t.Fatal("expected missing dev auth email to be rejected")
+	}
+}
+
+func TestRedirectCacheDefaultsDisabled(t *testing.T) {
+	t.Setenv("REDIRECT_CACHE_ENABLED", "")
+	t.Setenv("REDIS_URL", "")
+	t.Setenv("REDIRECT_CACHE_TIMEOUT", "")
+	c := Load()
+	if c.RedirectCacheEnabled {
+		t.Fatal("redirect cache must default to disabled")
+	}
+	if c.RedisURL != "redis://redis:6379/0" || c.RedirectCacheTimeout != 250*time.Millisecond {
+		t.Fatalf("Redis defaults: URL=%q timeout=%s", c.RedisURL, c.RedirectCacheTimeout)
 	}
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/csv"
@@ -16,6 +17,7 @@ import (
 	"image/png"
 	"io"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,21 +32,28 @@ import (
 	"shortq/internal/auth"
 	"shortq/internal/config"
 	"shortq/internal/models"
+	"shortq/internal/redirectcache"
 	"shortq/internal/store"
 )
 
 type Handler struct {
-	C          config.Config
-	S          *store.Store
-	Web        fs.FS
-	attemptMu  sync.Mutex
-	attempts   map[string][]time.Time
-	attemptOps uint64
-	qrSlots    chan struct{}
+	C            config.Config
+	S            *store.Store
+	Web          fs.FS
+	attemptMu    sync.Mutex
+	attempts     map[string][]time.Time
+	attemptOps   uint64
+	qrSlots      chan struct{}
+	redirects    *redirectcache.Resolver
+	cacheMetrics *redirectcache.Metrics
 }
 
 func New(c config.Config, s *store.Store, web fs.FS) *Handler {
-	return &Handler{C: c, S: s, Web: web, attempts: map[string][]time.Time{}, qrSlots: make(chan struct{}, 2)}
+	return NewWithRedirectCache(c, s, web, nil, nil)
+}
+
+func NewWithRedirectCache(c config.Config, s *store.Store, web fs.FS, redirects *redirectcache.Resolver, metrics *redirectcache.Metrics) *Handler {
+	return &Handler{C: c, S: s, Web: web, attempts: map[string][]time.Time{}, qrSlots: make(chan struct{}, 2), redirects: redirects, cacheMetrics: metrics}
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -140,13 +149,18 @@ func (h *Handler) adminRuntime(w http.ResponseWriter, r *http.Request) {
 	if err != nil || strings.TrimSpace(containerID) == "" {
 		containerID = "unknown"
 	}
-	jsonOut(w, http.StatusOK, map[string]string{
-		"database_engine": databaseEngine,
-		"database_name":   databaseName,
-		"server_hostname": h.C.ServerHostname,
-		"container_id":    containerID,
-		"deploy_tag":      h.C.DeployTag,
-	})
+	response := map[string]any{
+		"database_engine":        databaseEngine,
+		"database_name":          databaseName,
+		"server_hostname":        h.C.ServerHostname,
+		"container_id":           containerID,
+		"deploy_tag":             h.C.DeployTag,
+		"redirect_cache_enabled": h.redirects != nil,
+	}
+	if h.cacheMetrics != nil {
+		response["redirect_cache"] = h.cacheMetrics.Snapshot()
+	}
+	jsonOut(w, http.StatusOK, response)
 }
 
 func databaseIdentity(raw string) (string, string) {
@@ -557,6 +571,7 @@ func (h *Handler) links(w http.ResponseWriter, r *http.Request) {
 			errOut(w, 400, err.Error())
 			return
 		}
+		h.invalidateRedirect(l)
 		if err := h.audit(r, "link.created", "link", strconv.FormatInt(l.ID, 10), "success", nil, linkAudit(l)); err != nil {
 			errOut(w, 500, "audit log unavailable")
 			return
@@ -637,6 +652,7 @@ func (h *Handler) linkByID(w http.ResponseWriter, r *http.Request) {
 			errOut(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		h.invalidateRedirect(l)
 		if err := h.audit(r, "link.updated", "link", strconv.FormatInt(id, 10), "success", linkAudit(current), linkAudit(l)); err != nil {
 			errOut(w, 500, "audit log unavailable")
 			return
@@ -656,6 +672,7 @@ func (h *Handler) linkByID(w http.ResponseWriter, r *http.Request) {
 			errOut(w, 404, "link not found")
 			return
 		}
+		h.invalidateRedirect(before)
 		if err := h.audit(r, "link.deleted", "link", strconv.FormatInt(id, 10), "success", linkAudit(before), nil); err != nil {
 			errOut(w, 500, "audit log unavailable")
 			return
@@ -722,6 +739,7 @@ func (h *Handler) shortioLinks(w http.ResponseWriter, r *http.Request) {
 		errOut(w, http.StatusConflict, err.Error())
 		return
 	}
+	h.invalidateRedirect(created)
 	created.ShortURL = h.shortURL(created)
 	if err := h.audit(r, "shortio.link.created", "link", strconv.FormatInt(created.ID, 10), "success", nil, linkAudit(created)); err != nil {
 		errOut(w, http.StatusInternalServerError, "audit log unavailable")
@@ -753,6 +771,7 @@ func (h *Handler) shortioLinkByID(w http.ResponseWriter, r *http.Request) {
 		errOut(w, http.StatusNotFound, "link not found")
 		return
 	}
+	h.invalidateRedirect(before)
 	if err := h.audit(r, "shortio.link.deleted", "link", strconv.FormatInt(id, 10), "success", linkAudit(before), nil); err != nil {
 		errOut(w, http.StatusInternalServerError, "audit log unavailable")
 		return
@@ -798,6 +817,7 @@ func (h *Handler) shortioDeleteBulk(w http.ResponseWriter, r *http.Request) {
 		errOut(w, http.StatusNotFound, "one or more links were not found; no links deleted")
 		return
 	}
+	h.invalidateRedirects(beforeLinks)
 	before := map[string]any{"links": func() []map[string]any {
 		out := make([]map[string]any, len(beforeLinks))
 		for i, link := range beforeLinks {
@@ -1234,6 +1254,7 @@ func (h *Handler) importLinks(w http.ResponseWriter, r *http.Request) {
 		errOut(w, http.StatusConflict, "no links imported: "+err.Error())
 		return
 	}
+	h.invalidateRedirects(created)
 	createdAudit := make([]map[string]any, len(created))
 	for i, link := range created {
 		createdAudit[i] = linkAudit(link)
@@ -1293,6 +1314,7 @@ func (h *Handler) bulkLinks(w http.ResponseWriter, r *http.Request) {
 			errOut(w, http.StatusNotFound, "one or more links were not found; no links deleted")
 			return
 		}
+		h.invalidateRedirects(beforeLinks)
 		before := map[string]any{"links": func() []map[string]any {
 			out := make([]map[string]any, len(beforeLinks))
 			for i, link := range beforeLinks {
@@ -1327,6 +1349,7 @@ func (h *Handler) bulkLinks(w http.ResponseWriter, r *http.Request) {
 		errOut(w, http.StatusConflict, "no links updated: "+err.Error())
 		return
 	}
+	h.invalidateRedirects(updated)
 	beforeAudit := make([]map[string]any, len(currentLinks))
 	afterAudit := make([]map[string]any, len(updated))
 	for i := range currentLinks {
@@ -1668,7 +1691,9 @@ func (h *Handler) redirectSlug(w http.ResponseWriter, r *http.Request, slug stri
 		}
 		if d.VerifiedAt == nil || time.Since(d.VerifiedAt.UTC()) >= 24*time.Hour {
 			if !h.verifyDomain(d) {
-				_ = h.S.SetTenantDomainVerified(d.ID, false)
+				if err := h.S.SetTenantDomainVerified(d.ID, false); err == nil {
+					h.invalidateDomainRedirects(d)
+				}
 				http.NotFound(w, r)
 				return
 			}
@@ -1679,7 +1704,14 @@ func (h *Handler) redirectSlug(w http.ResponseWriter, r *http.Request, slug stri
 		}
 		domain = &d
 	}
-	l, err := h.S.LinkBySlug(slug)
+	loadLink := func() (models.Link, error) { return h.S.LinkBySlug(slug) }
+	var l models.Link
+	var err error
+	if h.redirects != nil {
+		l, err = h.redirects.Resolve(r.Context(), host, slug, loadLink)
+	} else {
+		l, err = loadLink()
+	}
 	if err != nil {
 		if domain != nil && domain.NotFoundURL != "" {
 			http.Redirect(w, r, domain.NotFoundURL, http.StatusFound)
@@ -1713,6 +1745,47 @@ func (h *Handler) redirectSlug(w http.ResponseWriter, r *http.Request, slug stri
 		return
 	}
 	http.Redirect(w, r, target, l.RedirectCode)
+}
+
+func (h *Handler) redirectHosts(tenantID *int64) []string {
+	hosts := []string{h.baseHost()}
+	aliases, err := h.S.ActiveDomainAliasesForTenant(tenantID)
+	if err != nil {
+		log.Printf("redirect_cache event=alias_lookup_error: %v", err)
+		return hosts
+	}
+	return append(hosts, aliases...)
+}
+
+func (h *Handler) invalidateRedirect(link models.Link) {
+	if h.redirects == nil {
+		return
+	}
+	if err := h.redirects.Invalidate(context.Background(), h.redirectHosts(link.TenantID), link.Slug); err != nil {
+		log.Printf("redirect_cache event=invalidation_error fallback=postgresql: %v", err)
+	}
+}
+
+func (h *Handler) invalidateRedirects(links []models.Link) {
+	for _, link := range links {
+		h.invalidateRedirect(link)
+	}
+}
+
+func (h *Handler) invalidateDomainRedirects(domain models.TenantDomain) {
+	if h.redirects == nil {
+		return
+	}
+	slugs, err := h.S.ActiveLinkSlugsForTenant(domain.TenantID)
+	if err != nil {
+		log.Printf("redirect_cache event=domain_link_lookup_error tenant_id=%d: %v", domain.TenantID, err)
+		return
+	}
+	for _, slug := range slugs {
+		if err := h.redirects.Invalidate(context.Background(), []string{domain.Domain}, slug); err != nil {
+			log.Printf("redirect_cache event=domain_invalidation_error tenant_id=%d fallback=postgresql: %v", domain.TenantID, err)
+		}
+	}
 }
 
 func linkExpired(l models.Link) bool {
@@ -2109,6 +2182,7 @@ func (h *Handler) domainByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		after, _ := h.S.TenantDomainByID(u, id)
+		h.invalidateDomainRedirects(d)
 		if err := h.audit(r, "domain.verified", "domain", strconv.FormatInt(id, 10), "success", domainAudit(d), domainAudit(after)); err != nil {
 			errOut(w, 500, "audit log unavailable")
 			return
@@ -2133,6 +2207,7 @@ func (h *Handler) domainByID(w http.ResponseWriter, r *http.Request) {
 			errOut(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		h.invalidateDomainRedirects(domain)
 		if err := h.audit(r, "domain.updated", "domain", strconv.FormatInt(id, 10), "success", domainAudit(before), domainAudit(domain)); err != nil {
 			errOut(w, 500, "audit log unavailable")
 			return
@@ -2153,6 +2228,7 @@ func (h *Handler) domainByID(w http.ResponseWriter, r *http.Request) {
 			errOut(w, 404, "domain not found")
 			return
 		}
+		h.invalidateDomainRedirects(before)
 		if err := h.audit(r, "domain.deleted", "domain", strconv.FormatInt(id, 10), "success", domainAudit(before), nil); err != nil {
 			errOut(w, 500, "audit log unavailable")
 			return

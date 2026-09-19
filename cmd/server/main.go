@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"shortq/internal/config"
 	"shortq/internal/db"
 	"shortq/internal/handlers"
+	"shortq/internal/redirectcache"
 	"shortq/internal/store"
 )
 
@@ -65,7 +67,22 @@ func main() {
 	if err := st.AssignUserTenant(cfg.SuperEmail, alvaTenant.ID); err != nil {
 		log.Fatal(err)
 	}
-	h := handlers.New(cfg, st, os.DirFS("web"))
+	var resolver *redirectcache.Resolver
+	var cacheMetrics *redirectcache.Metrics
+	if cfg.RedirectCacheEnabled {
+		redisCache, err := redirectcache.NewRedis(cfg.RedisURL, cfg.RedirectCacheTimeout)
+		if err != nil {
+			log.Printf("redirect_cache event=configuration_error: %v", err)
+		} else {
+			defer redisCache.Close()
+			cacheMetrics = &redirectcache.Metrics{}
+			resolver = redirectcache.NewResolver(redisCache, cacheMetrics)
+			if err := redisCache.Ping(context.Background()); err != nil {
+				log.Printf("redirect_cache event=startup_unavailable fallback=postgresql: %v", err)
+			}
+		}
+	}
+	h := handlers.NewWithRedirectCache(cfg, st, os.DirFS("web"), resolver, cacheMetrics)
 	log.Printf("shortq listening on %s", cfg.Addr)
 	server := &http.Server{
 		Addr:              cfg.Addr,
