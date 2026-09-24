@@ -7,7 +7,7 @@
   <title>ShortQ API Docs</title>
   <link rel="icon" href="/alva-favicon.png" type="image/png">
   <link rel="stylesheet" href="/style.css?v=20260828-swagger1">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.14/swagger-ui.css">
+  <link rel="stylesheet" href="/docs/assets/swagger-ui.css">
 </head>
 <body class="docs-page">
   <div class="brand-rail" aria-hidden="true"></div>
@@ -22,7 +22,7 @@
       </div>
       <nav>
         <a class="button secondary" href="/">Home</a>
-        <a class="button" href="/docs/openapi.yaml?v=20260828-swagger2">Download YAML</a>
+        <a class="button" href="/docs/openapi.yaml">Download YAML</a>
       </nav>
     </header>
 
@@ -38,18 +38,7 @@
       <div id="swagger-ui">Loading API docs...</div>
     </section>
   </main>
-  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.14/swagger-ui-bundle.js"></script>
-  <script>
-    window.addEventListener("load", function () {
-      window.ui = SwaggerUIBundle({
-        url: "/docs/openapi.yaml?v=20260828-swagger2",
-        dom_id: "#swagger-ui",
-        deepLinking: true,
-        persistAuthorization: true,
-        displayRequestDuration: true,
-        tryItOutEnabled: true,
-      });
-    });
-  </script>
+  <script src="/docs/assets/swagger-ui-bundle.js"></script>
+  <script src="/docs/assets/docs-init.js"></script>
 </body>
 </html>
