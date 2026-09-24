@@ -33,14 +33,14 @@ git checkout --detach --force "$DEPLOY_SHA"
 test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
 
 deploy() {
-  docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" config --quiet
-  docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build --remove-orphans
+  docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" config --quiet || return 1
+  docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build --remove-orphans || return 1
   for _ in $(seq 1 30); do curl --fail --silent --show-error "$HEALTH_URL" >/dev/null && return 0; sleep 2; done
   return 1
 }
 
 if ! deploy; then
-  printf 'health check failed; rolling back\n' >&2
+  printf 'deployment failed; rolling back\n' >&2
   if [[ "$previous_sha" =~ ^[0-9a-f]{40}$ ]]; then
     git checkout --detach --force "$previous_sha"
     deploy || { printf 'rollback failed\n' >&2; exit 1; }
