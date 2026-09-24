@@ -84,7 +84,8 @@ func runServer(cfg config.Config) error {
 	if err := db.Migrate(database); err != nil {
 		return err
 	}
-	st := store.New(database)
+	databaseMetrics := &store.DatabaseMetrics{}
+	st := store.NewWithMetrics(database, databaseMetrics)
 	if err := st.PurgeOldClicks(); err != nil {
 		log.Printf("click retention cleanup: %v", err)
 	}
