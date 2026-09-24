@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#221F1F">
   <title>shortQ</title>
   <link rel="icon" href="/alva-favicon.png" type="image/png">
-  <link rel="stylesheet" href="/style.css?v=20260828-swagger1">
+  <link rel="stylesheet" href="/style.css?v=20260924-workspace1">
 </head>
 <body>
   <div class="brand-rail" aria-hidden="true"></div>
@@ -59,182 +59,157 @@
 
       <div id="msg" class="notice"></div>
 
-      <div id="dashboardHome">
-      <section class="card primary-card">
-        <div class="card-title">
-          <div>
-            <p class="eyebrow">Most used</p>
-            <h2>Create shortened link</h2>
-          </div>
-          <span class="pill">Public path: /slug</span>
-        </div>
-        <form class="link-form" onsubmit="createLink(event)">
-          <label>Long URL
-            <input name="url" type="url" placeholder="https://alvaauto.com/..." required autocomplete="off">
-          </label>
-          <label>Custom slug
-            <input name="slug" placeholder="optional, e.g. test-ride" autocomplete="off">
-          </label>
-          <label>Title
-            <input name="title" placeholder="optional label" autocomplete="off">
-          </label>
-          <label>Dashboard visibility
-            <select name="visibility"><option value="private">Private to me</option><option value="department">Shared with ALVA</option></select>
-          </label>
-          <details class="advanced-fields">
-            <summary>Routing, expiration, UTM and security</summary>
-            <div class="form-grid">
-              <label>Redirect code<select name="redirect_code"><option>302</option><option>307</option><option>301</option><option>308</option></select></label>
-              <label>Expires at<input name="expires_at" type="datetime-local"></label>
-              <label>Maximum clicks<input name="max_clicks" type="number" min="1" placeholder="unlimited"></label>
-              <label>Expired destination<input name="expired_url" type="url" placeholder="optional"></label>
-              <label>iOS destination<input name="ios_url" type="url" placeholder="optional"></label>
-              <label>Android destination<input name="android_url" type="url" placeholder="optional"></label>
-              <label>Country routes (JSON)<textarea name="geo_targets" placeholder='[{"country_code":"ID","target_url":"https://..."}]'></textarea></label>
-              <label>Tags<input name="tags" placeholder="campaign; channel"></label>
-              <label>UTM source<input name="utm_source"></label><label>UTM medium<input name="utm_medium"></label>
-              <label>UTM campaign<input name="utm_campaign"></label><label>Password<input name="password" type="password" minlength="8"></label>
-              <label class="check"><input name="forward_query" type="checkbox"> Forward incoming query parameters</label>
-            </div>
-          </details>
-          <button type="submit">Create link</button>
-        </form>
-      </section>
+      <nav id="workspaceNav" class="workspace-nav" aria-label="Workspace navigation">
+        <a href="#home" data-view="home">Home</a>
+        <a href="#links" data-view="links">Links</a>
+        <a href="#analytics" data-view="analytics">Analytics</a>
+        <a id="adminNavItem" href="#admin/users" data-view="admin" hidden>Admin</a>
+        <a href="#settings" data-view="settings">Settings</a>
+      </nav>
 
-      <section class="grid two">
+      <div id="dashboardHome" class="workspace-view" data-workspace-view="home">
+        <section class="grid two action-grid">
+          <div class="card primary-card">
+            <div class="card-title">
+              <div><p class="eyebrow">Most used</p><h2>Create shortened link</h2></div>
+              <span class="pill">Public path: /s/slug</span>
+            </div>
+            <form class="link-form home-link-form" onsubmit="createLink(event)">
+              <label>Long URL<input name="url" type="url" placeholder="https://alvaauto.com/..." required autocomplete="off"></label>
+              <label>Custom slug<input name="slug" placeholder="optional, e.g. test-ride" autocomplete="off"></label>
+              <label>Title<input name="title" placeholder="optional label" autocomplete="off"></label>
+              <label>Dashboard visibility<select name="visibility"><option value="private">Private to me</option><option value="department">Shared with ALVA</option></select></label>
+              <details class="advanced-fields">
+                <summary>Routing, expiration, UTM and security</summary>
+                <div class="form-grid">
+                  <label>Redirect code<select name="redirect_code"><option>302</option><option>307</option><option>301</option><option>308</option></select></label>
+                  <label>Expires at<input name="expires_at" type="datetime-local"></label>
+                  <label>Maximum clicks<input name="max_clicks" type="number" min="1" placeholder="unlimited"></label>
+                  <label>Expired destination<input name="expired_url" type="url" placeholder="optional"></label>
+                  <label>iOS destination<input name="ios_url" type="url" placeholder="optional"></label>
+                  <label>Android destination<input name="android_url" type="url" placeholder="optional"></label>
+                  <label>Country routes (JSON)<textarea name="geo_targets" placeholder='[{"country_code":"ID","target_url":"https://..."}]'></textarea></label>
+                  <label>Tags<input name="tags" placeholder="campaign; channel"></label>
+                  <label>UTM source<input name="utm_source"></label><label>UTM medium<input name="utm_medium"></label>
+                  <label>UTM campaign<input name="utm_campaign"></label><label>Password<input name="password" type="password" minlength="8"></label>
+                  <label class="check"><input name="forward_query" type="checkbox"> Forward incoming query parameters</label>
+                </div>
+              </details>
+              <button type="submit">Create link</button>
+            </form>
+          </div>
+
+          <aside class="card qr-card">
+            <p class="eyebrow">Quick action</p>
+            <h2>Make QR</h2>
+            <p class="muted">Turn any URL or text into a ready-to-share QR code.</p>
+            <label>Text or URL<input id="qrText" placeholder="https://s.alvaauto.com/s/demo" autocomplete="off"></label>
+            <div class="form-grid"><label>Format<select id="qrFormat"><option>png</option><option>svg</option><option>pdf</option></select></label><label>Size<input id="qrSize" type="number" min="128" max="2048" value="512"></label><label>Foreground<input id="qrForeground" type="color" value="#000000"></label><label>Background<input id="qrBackground" type="color" value="#ffffff"></label></div>
+            <div class="button-row"><button onclick="makeQR()">Generate QR</button><button class="secondary" onclick="downloadQR()">Download</button></div>
+            <img id="qrImg" alt="QR result">
+          </aside>
+        </section>
+
+        <section class="card compact home-stats-card">
+          <div class="card-title"><div><p class="eyebrow">At a glance</p><h2>Workspace stats</h2></div></div>
+          <div id="stats" class="stats"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-title"><div><p class="eyebrow">Latest</p><h2>Recent links</h2></div><a class="button secondary" href="#links">Manage all links</a></div>
+          <div id="homeLinks" class="list">Loading recent links...</div>
+        </section>
+      </div>
+
+      <section id="linksView" class="workspace-view" data-workspace-view="links" hidden>
         <div class="card">
           <div class="card-title">
-            <div>
-              <p class="eyebrow">Links</p>
-              <h2>Manage links</h2>
-            </div>
+            <div><p class="eyebrow">Library</p><h2>Manage links</h2></div>
             <div><button class="secondary" onclick="downloadLinks()">Export CSV</button> <button class="secondary" onclick="$('#csvFile').click()">Import CSV</button> <input id="csvFile" type="file" accept=".csv,text/csv" hidden onchange="importLinks(this)"> <button class="secondary" onclick="loadLinks()">Refresh</button></div>
           </div>
-          <div id="links" class="list">Loading links...</div>
+          <div id="links" class="list">Open Links to load your library.</div>
           <div class="pagination" aria-label="Manage links pagination">
-            <label>Rows per page
-              <select id="linkPageSize" onchange="changeLinkPageSize()">
-                <option value="5">5</option>
-                <option value="10" selected>10</option>
-                <option value="20">20</option>
-                <option value="50">50</option>
-              </select>
-            </label>
+            <label>Rows per page<select id="linkPageSize" onchange="changeLinkPageSize()"><option value="5">5</option><option value="10" selected>10</option><option value="20">20</option><option value="50">50</option></select></label>
             <span id="linkPageNumber" aria-live="polite">Page 1</span>
             <button id="linkPrevious" type="button" class="secondary" onclick="previousLinkPage()" disabled>Previous</button>
             <button id="linkNext" type="button" class="secondary" onclick="nextLinkPage()" disabled>Next</button>
           </div>
         </div>
+      </section>
 
-        <aside class="stack">
-          <div class="card compact">
-            <p class="eyebrow">Stats</p>
-            <div id="stats" class="stats"></div>
-          </div>
-          <div class="card compact">
-            <p class="eyebrow">QR code</p>
-            <h2>Make QR</h2>
-            <label>Text or URL
-              <input id="qrText" placeholder="https://s.alvaauto.com/demo" autocomplete="off">
-            </label>
-            <div class="form-grid"><label>Format<select id="qrFormat"><option>png</option><option>svg</option><option>pdf</option></select></label><label>Size<input id="qrSize" type="number" min="128" max="2048" value="512"></label><label>Foreground<input id="qrForeground" type="color" value="#000000"></label><label>Background<input id="qrBackground" type="color" value="#ffffff"></label></div>
-            <button onclick="makeQR()">Generate QR</button>
-            <button class="secondary" onclick="downloadQR()">Download</button>
-            <img id="qrImg" alt="QR result">
-          </div>
-          <div class="card compact">
-            <p class="eyebrow">API key</p>
-            <h2>Automation access</h2>
-            <form onsubmit="createKey(event)" class="inline-form">
-              <input name="name" placeholder="Key name" required autocomplete="off">
-              <button type="submit">Create key</button>
+      <section id="analyticsView" class="workspace-view" data-workspace-view="analytics" hidden>
+        <section class="card">
+          <div class="card-title"><div><p class="eyebrow">Clickstream</p><h2>Recent activity</h2></div><button class="secondary" onclick="loadClicks()">Refresh</button></div>
+          <div id="breakdown" class="stats"></div>
+          <div id="clicks" class="list small">Open Analytics to load activity.</div>
+        </section>
+      </section>
+
+      <section id="adminView" class="workspace-view" data-workspace-view="admin" hidden>
+        <nav class="subnav" aria-label="Admin sections">
+          <a href="#admin/users" data-admin-view="users">Users</a>
+          <a href="#admin/domains" data-admin-view="domains">Domains</a>
+          <a id="auditSubnav" href="#admin/audit" data-admin-view="audit">Audit log</a>
+          <a id="runtimeSubnav" href="#admin/runtime" data-admin-view="runtime">Runtime</a>
+        </nav>
+
+        <div id="adminUsersPane" class="admin-pane">
+          <div id="customerPanel" class="card" hidden>
+            <div class="card-title"><div><p class="eyebrow">Admin</p><h2>Users</h2></div><button class="secondary" onclick="loadCustomers()">Refresh</button></div>
+            <form class="form-grid" onsubmit="createCustomer(event)">
+              <label>Name<input name="name" placeholder="User name" required></label><label>Email<input name="email" type="email" placeholder="user@example.com" required></label>
+              <label>Role<select id="customerRole" name="role"></select></label><label>Department<select id="customerTenant" name="tenant_id"></select></label>
+              <input name="password" type="hidden" value="MicrosoftSSOOnly123!"><button type="submit">Create user</button>
             </form>
-            <pre id="newKey"></pre>
-            <div id="keys" class="list small"></div>
-          </div>
-        </aside>
-      </section>
-
-      <section class="card">
-        <div class="card-title"><div><p class="eyebrow">Clickstream</p><h2>Recent activity</h2></div><button class="secondary" onclick="loadClicks()">Refresh</button></div>
-        <div id="breakdown" class="stats"></div>
-        <div id="clicks" class="list small">Loading clicks...</div>
-      </section>
-
-      <div id="adminSection" hidden>
-      <section id="runtimePanel" class="card" hidden>
-        <div class="card-title"><div><p class="eyebrow">Troubleshooting</p><h2>Runtime information</h2></div><button class="secondary" onclick="loadRuntimeInfo()">Refresh</button></div>
-        <p class="muted">Non-secret deployment and database identity.</p>
-        <div id="runtimeInfo" class="stats"></div>
-      </section>
-      <section id="tenantPanel" class="card" hidden>
-        <div class="card-title">
-          <div>
-            <p class="eyebrow">Admin</p>
-            <h2>Departments</h2>
+            <form id="userFilters" class="form-grid compact-filters" onsubmit="filterUsers(event)">
+              <label>Search<input name="search" placeholder="Name or email"></label>
+              <label>Role<select name="role"><option value="">all</option><option value="customer">user</option><option value="tenant">department admin</option><option value="superadmin">admin</option></select></label>
+              <label>Status<select name="active"><option value="">all</option><option value="true">active</option><option value="false">inactive</option></select></label><button type="submit">Filter</button>
+            </form>
+            <div id="customers" class="list small"></div>
+            <div class="pagination" aria-label="Users pagination">
+              <label>Rows per page<select id="userPageSize" onchange="changeUserPageSize()"><option value="5">5</option><option value="10" selected>10</option><option value="20">20</option><option value="50">50</option></select></label>
+              <span id="userPageNumber" aria-live="polite">Page 1</span><button id="userPrevious" type="button" class="secondary" onclick="previousUserPage()" disabled>Previous</button><button id="userNext" type="button" class="secondary" onclick="nextUserPage()" disabled>Next</button>
+            </div>
           </div>
         </div>
-        <p class="muted">All ShortQ users belong to the single ALVA department.</p>
-        <div id="tenants" class="list small"></div>
-      </section>
 
-      <section class="grid two admin-grid">
-        <div id="domainPanel" class="card" hidden>
-          <p class="eyebrow">Admin</p>
-          <h2>Domains</h2>
-          <form class="form-grid" onsubmit="createDomain(event)">
-            <label>Department
-              <select id="domainTenant" name="tenant_id"></select>
-            </label>
-            <label>Domain
-              <input name="domain" placeholder="go.example.com" required>
-            </label>
-            <button type="submit">Add domain</button>
-          </form>
-          <div id="domains" class="list small"></div>
+        <div id="adminDomainsPane" class="admin-pane" hidden>
+          <section id="tenantPanel" class="card" hidden>
+            <div class="card-title"><div><p class="eyebrow">Admin</p><h2>Departments</h2></div></div>
+            <p class="muted">All ShortQ users belong to the single ALVA department.</p><div id="tenants" class="list small"></div>
+          </section>
+          <div id="domainPanel" class="card" hidden>
+            <p class="eyebrow">Admin</p><h2>Domains</h2>
+            <form class="form-grid" onsubmit="createDomain(event)"><label>Department<select id="domainTenant" name="tenant_id"></select></label><label>Domain<input name="domain" placeholder="go.example.com" required></label><button type="submit">Add domain</button></form>
+            <div id="domains" class="list small"></div>
+          </div>
         </div>
 
-        <div id="customerPanel" class="card" hidden>
-          <p class="eyebrow">Admin</p>
-          <h2>Users</h2>
-          <form class="form-grid" onsubmit="createCustomer(event)">
-            <label>Name<input name="name" placeholder="User name" required></label>
-            <label>Email<input name="email" type="email" placeholder="user@example.com" required></label>
-            <label>Role<select id="customerRole" name="role"></select></label>
-            <label>Department<select id="customerTenant" name="tenant_id"></select></label>
-            <input name="password" type="hidden" value="MicrosoftSSOOnly123!">
-            <button type="submit">Create user</button>
-          </form>
-          <div id="customers" class="list small"></div>
+        <div id="adminAuditPane" class="admin-pane" hidden>
+          <section id="auditPanel" class="card" hidden>
+            <div class="card-title"><div><p class="eyebrow">Security</p><h2>Audit log</h2></div><button class="secondary" onclick="loadAuditEvents()">Refresh</button></div>
+            <form id="auditFilters" class="form-grid" onsubmit="filterAuditEvents(event)"><label>Actor email<input name="actor" type="email" placeholder="user@alvaauto.com"></label><label>Action<input name="action" placeholder="link.deleted"></label><label>Target type<select name="target_type"><option value="">all</option><option>link</option><option>domain</option><option>api_key</option><option>user</option></select></label><label>Outcome<select name="outcome"><option value="">all</option><option>success</option><option>denied</option></select></label><label>From<input name="from" type="datetime-local"></label><label>To<input name="to" type="datetime-local"></label><button type="submit">Filter</button></form>
+            <div id="auditEvents" class="list small">Open Audit log to load events.</div>
+            <div class="pagination" aria-label="Audit log pagination"><label>Rows per page<select id="auditPageSize" onchange="changeAuditPageSize()"><option value="5">5</option><option value="10" selected>10</option><option value="20">20</option><option value="50">50</option></select></label><span id="auditPageNumber" aria-live="polite">Page 1</span><button id="auditPrevious" type="button" class="secondary" onclick="previousAuditPage()" disabled>Previous</button><button id="auditNext" type="button" class="secondary" onclick="nextAuditPage()" disabled>Next</button></div>
+          </section>
+        </div>
+
+        <div id="adminRuntimePane" class="admin-pane" hidden>
+          <section id="runtimePanel" class="card" hidden><div class="card-title"><div><p class="eyebrow">Troubleshooting</p><h2>Runtime information</h2></div><button class="secondary" onclick="loadRuntimeInfo()">Refresh</button></div><p class="muted">Non-secret deployment and database identity.</p><div id="runtimeInfo" class="stats"></div></section>
         </div>
       </section>
-      <section id="auditPanel" class="card" hidden>
-        <div class="card-title"><div><p class="eyebrow">Security</p><h2>Audit log</h2></div><button class="secondary" onclick="loadAuditEvents()">Refresh</button></div>
-        <form id="auditFilters" class="form-grid" onsubmit="filterAuditEvents(event)">
-          <label>Actor email<input name="actor" type="email" placeholder="user@alvaauto.com"></label>
-          <label>Action<input name="action" placeholder="link.deleted"></label>
-          <label>Target type<select name="target_type"><option value="">all</option><option>link</option><option>domain</option><option>api_key</option><option>user</option></select></label>
-          <label>Outcome<select name="outcome"><option value="">all</option><option>success</option><option>denied</option></select></label>
-          <label>From<input name="from" type="datetime-local"></label><label>To<input name="to" type="datetime-local"></label>
-          <button type="submit">Filter</button>
-        </form>
-        <div id="auditEvents" class="list small">Loading audit events...</div>
-        <div class="pagination" aria-label="Audit log pagination">
-          <label>Rows per page
-            <select id="auditPageSize" onchange="changeAuditPageSize()">
-              <option value="5">5</option>
-              <option value="10" selected>10</option>
-              <option value="20">20</option>
-              <option value="50">50</option>
-            </select>
-          </label>
-          <span id="auditPageNumber" aria-live="polite">Page 1</span>
-          <button id="auditPrevious" type="button" class="secondary" onclick="previousAuditPage()" disabled>Previous</button>
-          <button id="auditNext" type="button" class="secondary" onclick="nextAuditPage()" disabled>Next</button>
-        </div>
+
+      <section id="settingsView" class="workspace-view" data-workspace-view="settings" hidden>
+        <section class="grid two settings-grid">
+          <div class="card">
+            <p class="eyebrow">API key</p><h2>Automation access</h2>
+            <form onsubmit="createKey(event)" class="inline-form"><input name="name" placeholder="Key name" required autocomplete="off"><button type="submit">Create key</button></form>
+            <pre id="newKey"></pre><div id="keys" class="list small">Open Settings to load API keys.</div>
+          </div>
+          <aside class="card compact"><p class="eyebrow">Account</p><h2>Workspace access</h2><p class="muted">Use My report for personal performance. Workspace role and mode controls stay above.</p></aside>
+        </section>
       </section>
-      </div>
-      </div>
 
       <section id="reportView" hidden aria-live="polite">
         <div class="card report-heading">
@@ -311,7 +286,7 @@
       </div>
     </form>
   </dialog>
-  <script src="/reports.js?v=20260825-reports1"></script>
-  <script src="/app.js?v=20260825-reports1"></script>
+  <script src="/reports.js?v=20260924-workspace1"></script>
+  <script src="/app.js?v=20260924-workspace1"></script>
 </body>
 </html>

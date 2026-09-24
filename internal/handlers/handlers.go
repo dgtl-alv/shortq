@@ -481,12 +481,40 @@ func (h *Handler) customers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" {
-		xs, err := h.S.ListUsers(u)
+		limit := 10
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed < 1 || parsed > 100 {
+				errOut(w, http.StatusBadRequest, "limit must be 1 to 100")
+				return
+			}
+			limit = parsed
+		}
+		var cursor int64
+		if raw := r.URL.Query().Get("cursor"); raw != "" {
+			parsed, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil || parsed < 1 {
+				errOut(w, http.StatusBadRequest, "cursor must be a positive user id")
+				return
+			}
+			cursor = parsed
+		}
+		role := r.URL.Query().Get("role")
+		if role != "" && role != "superadmin" && role != "tenant" && role != "customer" {
+			errOut(w, http.StatusBadRequest, "invalid role filter")
+			return
+		}
+		active := r.URL.Query().Get("active")
+		if active != "" && active != "true" && active != "false" {
+			errOut(w, http.StatusBadRequest, "active must be true or false")
+			return
+		}
+		page, err := h.S.ListUsersPage(u, limit, cursor, r.URL.Query().Get("search"), role, active)
 		if err != nil {
 			errOut(w, 500, err.Error())
 			return
 		}
-		jsonOut(w, 200, xs)
+		jsonOut(w, 200, page)
 		return
 	}
 	if r.Method == "POST" {

@@ -2,9 +2,15 @@ const $ = s => document.querySelector(s);
 let currentUser = null;
 let tenantCache = [];
 let linkCache = [];
+let recentLinkCache = [];
+let loadedWorkspaceViews = new Set();
+let lastWorkspaceHash = '#home';
 let linkCursor = '';
 let linkCursorHistory = [];
 let linkNextCursor = 0;
+let userCursor = '';
+let userCursorHistory = [];
+let userNextCursor = 0;
 let auditCursor = '';
 let auditCursorHistory = [];
 let auditNextCursor = 0;
@@ -70,8 +76,11 @@ function confirmAction({ title, message, confirmLabel = 'Confirm', danger = fals
 
 function renderDashboardMode() {
   const canSwitch = Boolean(currentUser && currentUser.can_switch_mode);
+  const adminMode = Boolean(currentUser && currentUser.dashboard_mode === 'admin' && currentUser.role !== 'customer');
   $('#modeSwitcher').hidden = !canSwitch;
-  $('#adminSection').hidden = !currentUser || currentUser.dashboard_mode !== 'admin';
+  $('#adminNavItem').hidden = !adminMode;
+  $('#auditSubnav').hidden = !currentUser || currentUser.role !== 'superadmin';
+  $('#runtimeSubnav').hidden = !currentUser || currentUser.role !== 'superadmin';
   $('#adminModeButton').classList.toggle('active', currentUser && currentUser.dashboard_mode === 'admin');
   $('#userModeButton').classList.toggle('active', currentUser && currentUser.dashboard_mode === 'user');
 }
@@ -94,7 +103,8 @@ async function createLink(e) {
     e.target.reset();
     showMsg(`Created: ${link.short_url}`, 'ok');
     resetLinkPagination();
-    await Promise.all([loadLinks(), loadStats()]);
+    loadedWorkspaceViews.delete('links');
+    await Promise.all([loadRecentLinks(), loadStats()]);
   } catch (x) { showMsg(x); }
 }
 
@@ -120,6 +130,17 @@ function previousLinkPage() {
   if (!linkCursorHistory.length) return;
   linkCursor = linkCursorHistory.pop();
   loadLinks();
+}
+
+async function loadRecentLinks() {
+  const page = await api('/api/v1/links/page?limit=5') || { items: [] };
+  recentLinkCache = page.items || [];
+  $('#homeLinks').innerHTML = recentLinkCache.map(x => `
+    <div class="row link-row home-link-row">
+      <div><b>${esc(x.title || x.slug)}</b><a href="${esc(x.short_url)}" target="_blank" rel="noopener">${esc(x.short_url)}</a><div class="tiny">${x.clicks} clicks · ${esc(x.visibility === 'department' ? 'shared with ALVA' : 'private')}</div></div>
+      <button class="secondary" onclick="openLinkReport(${x.id})">Report</button>
+      <button class="secondary" onclick="qrForLink(${x.id})">QR</button>
+    </div>`).join('') || '<div class="empty">No links yet. Create first link above.</div>';
 }
 
 async function loadLinks() {
@@ -191,6 +212,7 @@ async function saveLink(e) {
     const result = await api('/api/v1/links/' + form.elements.id.value, { method: 'PATCH', body: JSON.stringify(linkPayloadFromForm(form, false)) });
     $('#linkEditor').close();
     showMsg(`Updated /${result.slug}; the slug was not changed.`, 'ok');
+    loadedWorkspaceViews.delete('home');
     await Promise.all([loadLinks(), loadStats()]);
   } catch (x) { showMsg(x); }
 }
@@ -204,6 +226,7 @@ async function importLinks(input) {
     const result = await response.json(); if (!response.ok) throw result;
     showMsg(`Imported ${result.imported} links.`, result.errors && Object.keys(result.errors).length ? 'error' : 'ok');
     resetLinkPagination();
+    loadedWorkspaceViews.delete('home');
     await Promise.all([loadLinks(), loadStats()]);
   } catch (x) { showMsg(x); } finally { input.value = ''; }
 }
@@ -214,6 +237,7 @@ async function delLink(id) {
   try {
     await api('/api/v1/links/' + id, { method: 'DELETE' });
     showMsg('Link deleted.', 'ok');
+    loadedWorkspaceViews.delete('home');
     await Promise.all([loadLinks(), loadStats()]);
   } catch (x) { showMsg(x); }
 }
@@ -275,15 +299,19 @@ function setupCustomerForm() {
   if (!currentUser || currentUser.role === 'customer') return;
   const role = $('#customerRole');
   const tenant = $('#customerTenant');
+  const filterRole = $('#userFilters [name="role"]');
   if (currentUser.role === 'tenant') {
     role.innerHTML = '<option value="customer">user</option>';
     role.disabled = true;
+    filterRole.value = 'customer';
+    filterRole.disabled = true;
     tenant.innerHTML = `<option value="${currentUser.tenant_id || ''}">department ${currentUser.tenant_id || '-'}</option>`;
     tenant.disabled = true;
     return;
   }
   role.disabled = false;
   role.innerHTML = '<option value="customer">user</option><option value="tenant">department admin</option>';
+  filterRole.disabled = false;
   tenant.disabled = false;
   tenant.innerHTML = '<option value="">select department</option>' + tenantCache.map(t => `<option value="${t.id}">${esc(t.name)} (${esc(t.slug)})</option>`).join('');
 }
@@ -328,16 +356,59 @@ async function delDomain(id) {
   } catch (x) { showMsg(x); }
 }
 
+function resetUserPagination() {
+  userCursor = '';
+  userCursorHistory = [];
+  userNextCursor = 0;
+}
+
+function filterUsers(e) {
+  e.preventDefault();
+  resetUserPagination();
+  loadCustomers();
+}
+
+function changeUserPageSize() {
+  resetUserPagination();
+  loadCustomers();
+}
+
+function nextUserPage() {
+  if (!userNextCursor) return;
+  userCursorHistory.push(userCursor);
+  userCursor = String(userNextCursor);
+  loadCustomers();
+}
+
+function previousUserPage() {
+  if (!userCursorHistory.length) return;
+  userCursor = userCursorHistory.pop();
+  loadCustomers();
+}
+
 async function loadCustomers() {
   if (currentUser.role === 'customer') return;
   setupCustomerForm();
-  const xs = await api('/api/v1/customers') || [];
+  const query = new URLSearchParams(Object.fromEntries(new FormData($('#userFilters')).entries()));
+  query.set('limit', $('#userPageSize').value);
+  if (userCursor) query.set('cursor', userCursor);
+  const page = await api('/api/v1/customers?' + query.toString()) || { items: [] };
+  const xs = page.items || [];
+  userNextCursor = page.next_cursor || 0;
   $('#customerPanel').hidden = false;
-  $('#customers').innerHTML = xs.map(u => `<div class="row"><div><b>${esc(u.name)}</b><div class="tiny">${esc(u.email)} · ${esc(roleLabel(u.role))} · department ${u.tenant_id || '-'} · deletion ${u.role === 'superadmin' ? 'always allowed' : (u.deletion_access ? 'enabled' : 'locked')}</div></div><button class="secondary" onclick="openUserReport(${u.id})">Report</button>${currentUser.role === 'superadmin' && u.role !== 'superadmin' ? `<button class="${u.deletion_access ? 'danger' : 'secondary'}" onclick="setDeletionAccess(${u.id}, ${!u.deletion_access})">${u.deletion_access ? 'Disable deletion' : 'Enable deletion'}</button>` : ''}</div>`).join('') || '<div class="empty">No users.</div>';
+  $('#customers').innerHTML = xs.map(u => `<div class="row"><div><b>${esc(u.name)}</b><div class="tiny">${esc(u.email)} · ${esc(roleLabel(u.role))} · department ${u.tenant_id || '-'} · ${u.active ? 'active' : 'inactive'} · deletion ${u.role === 'superadmin' ? 'always allowed' : (u.deletion_access ? 'enabled' : 'locked')}</div></div><button class="secondary" onclick="openUserReport(${u.id})">Report</button>${currentUser.role === 'superadmin' && u.role !== 'superadmin' ? `<button class="${u.deletion_access ? 'danger' : 'secondary'}" onclick="setDeletionAccess(${u.id}, ${!u.deletion_access})">${u.deletion_access ? 'Disable deletion' : 'Enable deletion'}</button>` : ''}</div>`).join('') || '<div class="empty">No matching users.</div>';
+  $('#userPageNumber').textContent = `Page ${userCursorHistory.length + 1}`;
+  $('#userPrevious').disabled = userCursorHistory.length === 0;
+  $('#userNext').disabled = !userNextCursor;
 }
 async function setDeletionAccess(id, enabled) {
   if (!await confirmAction({ title: `${enabled ? 'Enable' : 'Disable'} deletion access?`, message: enabled ? 'This user will be able to delete links, domains, and API keys.' : 'This user will immediately lose deletion access.', confirmLabel: enabled ? 'Enable access' : 'Disable access', danger: enabled })) return;
-  try { await api(`/api/v1/customers/${id}/deletion-access`, { method: 'PATCH', body: JSON.stringify({ enabled }) }); showMsg('Deletion access updated.', 'ok'); await Promise.all([loadCustomers(), loadAuditEvents()]); } catch (x) { showMsg(x); }
+  try {
+    await api(`/api/v1/customers/${id}/deletion-access`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
+    showMsg('Deletion access updated.', 'ok');
+    loadedWorkspaceViews.delete('admin/audit');
+    await loadCustomers();
+  } catch (x) { showMsg(x); }
 }
 
 function resetAuditPagination() {
@@ -393,12 +464,13 @@ async function createCustomer(e) {
     e.target.reset();
     showMsg('User created.', 'ok');
     setupCustomerForm();
+    resetUserPagination();
     await Promise.all([loadCustomers(), loadStats()]);
   } catch (x) { showMsg(x); }
 }
 
 function qrForLink(id) {
-  const link = linkCache.find(item => item.id === id);
+  const link = linkCache.find(item => item.id === id) || recentLinkCache.find(item => item.id === id);
   if (!link) { showMsg('The selected link is no longer available.'); return; }
   $('#qrText').value = link.short_url;
   makeQR();
@@ -453,23 +525,37 @@ async function loadRuntimeInfo() {
   }));
 }
 
+async function loadWorkspaceView(view, adminView = 'users') {
+  const key = view === 'admin' ? `admin/${adminView}` : view;
+  if (loadedWorkspaceViews.has(key)) return;
+  if (view === 'home') await Promise.all([loadStats(), loadRecentLinks()]);
+  if (view === 'links') await loadLinks();
+  if (view === 'analytics') await loadClicks();
+  if (view === 'settings') await loadKeys();
+  if (view === 'admin') {
+    if (currentUser.role === 'superadmin' && !tenantCache.length) await loadTenants();
+    setupCustomerForm();
+    if (adminView === 'users') await loadCustomers();
+    if (adminView === 'domains') await loadDomains();
+    if (adminView === 'audit') await loadAuditEvents();
+    if (adminView === 'runtime') await loadRuntimeInfo();
+  }
+  loadedWorkspaceViews.add(key);
+}
+
 async function renderDashboard() {
   showApp();
   renderDashboardMode();
   $('#me').textContent = currentUser.name + ' · ' + currentUser.email + ' · acting as ' + roleLabel(currentUser.role);
   tenantCache = [];
+  loadedWorkspaceViews = new Set();
   $('#tenantPanel').hidden = true;
   $('#domainPanel').hidden = true;
   $('#customerPanel').hidden = true;
   $('#auditPanel').hidden = true;
   $('#runtimePanel').hidden = true;
   resetLinkPagination();
-  await loadTenants();
-  setupCustomerForm();
-  const tasks = [loadStats(), loadLinks(), loadKeys(), loadCustomers(), loadDomains(), loadClicks(), loadAuditEvents(), loadRuntimeInfo()];
-  const results = await Promise.allSettled(tasks);
-  const failed = results.find(r => r.status === 'rejected');
-  if (failed) showMsg(failed.reason);
+  resetUserPagination();
   await routeView();
 }
 

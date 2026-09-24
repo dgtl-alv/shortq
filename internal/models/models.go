@@ -31,6 +31,11 @@ type User struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+type UserPage struct {
+	Items      []User `json:"items"`
+	NextCursor int64  `json:"next_cursor,omitempty"`
+}
+
 type AuditEvent struct {
 	ID          int64          `json:"id"`
 	ActorUserID *int64         `json:"actor_user_id,omitempty"`

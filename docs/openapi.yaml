@@ -148,8 +148,14 @@ paths:
       responses: {'409': {description: The ALVA department is fixed}}
   /api/v1/customers:
     get:
-      description: Superadmin lists tenant/customer users. Tenant lists customers in own tenant.
-      responses: {'200': {description: List users}}
+      description: Cursor-paginated users. Superadmin sees all users; tenant sees customers in own tenant.
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 10}}
+        - {name: cursor, in: query, schema: {type: integer}}
+        - {name: search, in: query, description: Case-insensitive name or email search, schema: {type: string}}
+        - {name: role, in: query, schema: {type: string, enum: [superadmin, tenant, customer]}}
+        - {name: active, in: query, schema: {type: boolean}}
+      responses: {'200': {description: User page, content: {application/json: {schema: {$ref: '#/components/schemas/UserPage'}}}}}
     post:
       description: Superadmin creates tenant/customer users. Tenant creates customers in own tenant.
       requestBody:
@@ -408,6 +414,12 @@ components:
     User:
       type: object
       properties: {id: {type: integer}, tenant_id: {type: integer, nullable: true}, email: {type: string}, name: {type: string}, role: {type: string, enum: [superadmin, tenant, customer]}, deletion_access: {type: boolean}}
+    UserPage:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/User'}}
+        next_cursor: {type: integer}
     SessionUser:
       allOf:
         - {$ref: '#/components/schemas/User'}
