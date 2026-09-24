@@ -142,6 +142,19 @@
           <div class="card-title"><div><p class="eyebrow">Clickstream</p><h2>Recent activity</h2></div><button class="secondary" onclick="loadClicks()">Refresh</button></div>
           <div id="breakdown" class="stats"></div>
           <div id="clicks" class="list small">Open Analytics to load activity.</div>
+          <div class="pagination" aria-label="Recent activity pagination">
+            <label>Rows per page
+              <select id="clickPageSize" onchange="changeClickPageSize()">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+              </select>
+            </label>
+            <span id="clickPageNumber" aria-live="polite">Page 1</span>
+            <button id="clickPrevious" type="button" class="secondary" onclick="previousClickPage()" disabled>Previous</button>
+            <button id="clickNext" type="button" class="secondary" onclick="nextClickPage()" disabled>Next</button>
+          </div>
         </section>
       </section>
 
@@ -286,7 +299,7 @@
       </div>
     </form>
   </dialog>
-  <script src="/reports.js?v=20260924-workspace1"></script>
-  <script src="/app.js?v=20260924-workspace1"></script>
+  <script src="/reports.js?v=20260924-clickpage1"></script>
+  <script src="/app.js?v=20260924-clickpage1"></script>
 </body>
 </html>
