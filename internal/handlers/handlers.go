@@ -72,8 +72,9 @@ func NewWithInfrastructure(c config.Config, s *store.Store, web fs.FS, redirects
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", h.health)
-	mux.HandleFunc("/docs/openapi.yaml", h.openapi)
-	mux.HandleFunc("/docs", h.swagger)
+	mux.HandleFunc("/docs", h.withDocsAuth(h.swagger))
+	mux.HandleFunc("/docs/", h.withDocsAuth(h.swagger))
+	mux.HandleFunc("/docs.html", h.withDocsAuth(h.swagger))
 	mux.HandleFunc("/api/v1/auth/register", h.register)
 	mux.HandleFunc("/api/v1/auth/login", h.login)
 	mux.HandleFunc("/api/v1/auth/forgot-password", h.forgot)
@@ -199,17 +200,31 @@ func databaseIdentity(raw string) (string, string) {
 	return engine, name
 }
 func (h *Handler) openapi(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Pragma", "no-cache")
-	w.Header().Set("Expires", "0")
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	http.ServeFile(w, r, "docs/openapi.yaml")
 }
+
 func (h *Handler) swagger(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
-	http.ServeFile(w, r, "web/docs.html")
+
+	switch r.URL.Path {
+	case "/docs", "/docs/":
+		http.ServeFile(w, r, "web/docs.html")
+	case "/docs.html":
+		http.Redirect(w, r, "/docs", http.StatusPermanentRedirect)
+	case "/docs/openapi.yaml":
+		h.openapi(w, r)
+	case "/docs/assets/swagger-ui.css":
+		http.ServeFile(w, r, "web/docs-assets/swagger-ui.css")
+	case "/docs/assets/swagger-ui-bundle.js":
+		http.ServeFile(w, r, "web/docs-assets/swagger-ui-bundle.js")
+	case "/docs/assets/docs-init.js":
+		http.ServeFile(w, r, "web/docs-assets/docs-init.js")
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
@@ -2052,6 +2067,17 @@ func (h *Handler) recordClick(ctx context.Context, event models.ClickEvent, incr
 	return h.S.RecordClick(event, increment, maxClicks)
 }
 
+func (h *Handler) withDocsAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := h.userFromSession(r)
+		if !ok {
+			http.Redirect(w, r, "/auth/microsoft/login", http.StatusFound)
+			return
+		}
+		next(w, r.WithContext(withPrincipal(r.Context(), p)))
+	}
+}
+
 func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if key := apiKeyFromRequest(r); key != "" {
@@ -2132,9 +2158,17 @@ func logReq(next http.Handler) http.Handler {
 	})
 }
 
+func isDocsPath(path string) bool {
+	return path == "/docs" || path == "/docs.html" || strings.HasPrefix(path, "/docs/")
+}
+
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "base-uri 'none'; frame-ancestors 'none'; object-src 'none'")
+		csp := "base-uri 'none'; frame-ancestors 'none'; object-src 'none'"
+		if isDocsPath(r.URL.Path) {
+			csp = "default-src 'none'; base-uri 'none'; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+		}
+		w.Header().Set("Content-Security-Policy", csp)
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
