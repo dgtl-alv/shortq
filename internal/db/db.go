@@ -8,6 +8,15 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+const (
+	createClicksCreatedIDIndex = `CREATE INDEX IF NOT EXISTS idx_clicks_created_id ON clicks(created_at,id)`
+	dropClicksCreatedAtIndex   = `DROP INDEX IF EXISTS idx_clicks_created_at`
+)
+
+func clickRetentionIndexStatements() []string {
+	return []string{createClicksCreatedIDIndex, dropClicksCreatedAtIndex}
+}
+
 func Open(dsn string) (*sql.DB, error) {
 	database, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -54,7 +63,7 @@ func Migrate(database *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(id,created_at)`, `CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_events(actor_user_id,id)`, `CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_events(action,id)`, `CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_events(target_type,id)`, `CREATE INDEX IF NOT EXISTS idx_audit_outcome ON audit_events(outcome,id)`,
 		`ALTER TABLE clicks ADD COLUMN IF NOT EXISTS event_id UUID`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_clicks_event_id_unique ON clicks(event_id) WHERE event_id IS NOT NULL`,
-		`CREATE INDEX IF NOT EXISTS idx_links_tenant_id ON links(tenant_id,id)`, `CREATE INDEX IF NOT EXISTS idx_links_user_id ON links(user_id,id)`, `CREATE INDEX IF NOT EXISTS idx_links_visibility ON links(tenant_id,visibility,deleted_at,id)`, `CREATE INDEX IF NOT EXISTS idx_clicks_created_at ON clicks(created_at)`, `CREATE INDEX IF NOT EXISTS idx_clicks_link_created ON clicks(link_id,created_at)`, `CREATE INDEX IF NOT EXISTS idx_clicks_country_created ON clicks(country_code,created_at,id)`, `CREATE INDEX IF NOT EXISTS idx_clicks_device_created ON clicks(device,created_at,id)`, `CREATE INDEX IF NOT EXISTS idx_domains_tenant_active ON tenant_domains(tenant_id,status,verified_at,id)`, `CREATE INDEX IF NOT EXISTS idx_rollups_link_day ON click_rollups_daily(link_id,day)`,
+		`CREATE INDEX IF NOT EXISTS idx_links_tenant_id ON links(tenant_id,id)`, `CREATE INDEX IF NOT EXISTS idx_links_user_id ON links(user_id,id)`, `CREATE INDEX IF NOT EXISTS idx_links_visibility ON links(tenant_id,visibility,deleted_at,id)`, createClicksCreatedIDIndex, dropClicksCreatedAtIndex, `CREATE INDEX IF NOT EXISTS idx_clicks_link_created ON clicks(link_id,created_at)`, `CREATE INDEX IF NOT EXISTS idx_clicks_country_created ON clicks(country_code,created_at,id)`, `CREATE INDEX IF NOT EXISTS idx_clicks_device_created ON clicks(device,created_at,id)`, `CREATE INDEX IF NOT EXISTS idx_domains_tenant_active ON tenant_domains(tenant_id,status,verified_at,id)`, `CREATE INDEX IF NOT EXISTS idx_rollups_link_day ON click_rollups_daily(link_id,day)`,
 		`INSERT INTO schema_migrations(version) VALUES(1),(2),(3),(4),(5) ON CONFLICT(version) DO NOTHING`,
 	}
 	tx, err := conn.BeginTx(ctx, nil)

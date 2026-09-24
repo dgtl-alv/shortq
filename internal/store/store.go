@@ -931,7 +931,7 @@ func nullableString(value string) any {
 }
 
 func (s *Store) PurgeOldClicks() error {
-	_, err := s.DB.Exec(`DELETE FROM clicks WHERE id IN (SELECT id FROM clicks WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '90 days' ORDER BY id LIMIT 10000)`)
+	_, err := s.DB.Exec(`DELETE FROM clicks WHERE id IN (SELECT id FROM clicks WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '90 days' ORDER BY created_at,id LIMIT 10000)`)
 	return err
 }
 
@@ -943,7 +943,7 @@ func (s *Store) Analytics(u models.User) (models.Analytics, error) {
 	if err := s.DB.QueryRow(q, args...).Scan(&a.TotalLinks, &a.TotalClicks); err != nil {
 		return a, err
 	}
-	clickQ := `SELECT COUNT(*) FROM clicks c JOIN links l ON l.id=c.link_id WHERE l.deleted_at IS NULL AND DATE(c.created_at)=CURRENT_DATE`
+	clickQ := `SELECT COUNT(*) FROM clicks c JOIN links l ON l.id=c.link_id WHERE l.deleted_at IS NULL AND c.created_at>=CURRENT_DATE AND c.created_at<CURRENT_DATE+INTERVAL '1 day'`
 	clickArgs := []any{}
 	clickQ, clickArgs = addLinkViewScope(clickQ, clickArgs, u, "l", false)
 	_ = s.DB.QueryRow(clickQ, clickArgs...).Scan(&a.TodayClicks)
