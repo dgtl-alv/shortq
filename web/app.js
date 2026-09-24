@@ -11,6 +11,9 @@ let linkNextCursor = 0;
 let userCursor = '';
 let userCursorHistory = [];
 let userNextCursor = 0;
+let clickCursor = '';
+let clickCursorHistory = [];
+let clickNextCursor = 0;
 let auditCursor = '';
 let auditCursorHistory = [];
 let auditNextCursor = 0;
@@ -156,6 +159,7 @@ async function loadLinks() {
         <b>${esc(x.title || x.slug)}</b>
         <a href="${esc(x.short_url)}" target="_blank" rel="noopener">${esc(x.short_url)}</a>
         <div class="tiny">${x.clicks} clicks · ${esc(x.visibility === "department" ? "shared with ALVA" : "private")}</div>
+        <div class="tiny">Created ${new Date(x.created_at).toLocaleString()}</div>
         <div class="tiny original-url">${esc(x.target_url)}</div>
         <button type="button" class="url-toggle" aria-expanded="false" onclick="toggleTargetURL(this)">Show full URL</button>
         ${x.creator_name ? `<div class="tiny">Created by ${esc(x.creator_name)} &middot; ${esc(x.creator_email)}</div>` : ''}
@@ -491,10 +495,40 @@ function downloadQR() {
   const link = document.createElement('a'); link.href = qrURL(); link.download = 'shortq-qr.' + $('#qrFormat').value; link.click();
 }
 
+function resetClickPagination() {
+  clickCursor = '';
+  clickCursorHistory = [];
+  clickNextCursor = 0;
+}
+
+function changeClickPageSize() {
+  resetClickPagination();
+  loadClicks();
+}
+
+function nextClickPage() {
+  if (!clickNextCursor) return;
+  clickCursorHistory.push(clickCursor);
+  clickCursor = String(clickNextCursor);
+  loadClicks();
+}
+
+function previousClickPage() {
+  if (!clickCursorHistory.length) return;
+  clickCursor = clickCursorHistory.pop();
+  loadClicks();
+}
+
 async function loadClicks() {
-  const [page, breakdown] = await Promise.all([api('/api/v1/clicks?limit=50'), api('/api/v1/analytics/breakdown?group_by=country')]);
+  const query = new URLSearchParams({ limit: $('#clickPageSize').value });
+  if (clickCursor) query.set('cursor', clickCursor);
+  const [page, breakdown] = await Promise.all([api('/api/v1/clicks?' + query.toString()), api('/api/v1/analytics/breakdown?group_by=country')]);
+  clickNextCursor = page.next_cursor || 0;
   $('#breakdown').innerHTML = (breakdown || []).slice(0, 6).map(x => `<div><b>${x.clicks}</b><span>${esc(x.key || 'unknown')}</span></div>`).join('');
   $('#clicks').innerHTML = (page.items || []).map(x => `<div class="row no-actions"><div><b>/${esc(x.slug)}</b><div class="tiny">${new Date(x.created_at).toLocaleString()} · ${esc(x.country_code || 'unknown')} · ${esc(x.device)} · ${esc(x.browser)} · ${esc(x.route_type)} → ${x.status_code}</div></div></div>`).join('') || '<div class="empty">No click events yet.</div>';
+  $('#clickPageNumber').textContent = `Page ${clickCursorHistory.length + 1}`;
+  $('#clickPrevious').disabled = clickCursorHistory.length === 0;
+  $('#clickNext').disabled = !clickNextCursor;
 }
 
 async function loadRuntimeInfo() {
@@ -556,6 +590,7 @@ async function renderDashboard() {
   $('#runtimePanel').hidden = true;
   resetLinkPagination();
   resetUserPagination();
+  resetClickPagination();
   await routeView();
 }
 
