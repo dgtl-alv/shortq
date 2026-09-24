@@ -111,6 +111,19 @@
             <div><button class="secondary" onclick="downloadLinks()">Export CSV</button> <button class="secondary" onclick="$('#csvFile').click()">Import CSV</button> <input id="csvFile" type="file" accept=".csv,text/csv" hidden onchange="importLinks(this)"> <button class="secondary" onclick="loadLinks()">Refresh</button></div>
           </div>
           <div id="links" class="list">Loading links...</div>
+          <div class="pagination" aria-label="Manage links pagination">
+            <label>Rows per page
+              <select id="linkPageSize" onchange="changeLinkPageSize()">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+              </select>
+            </label>
+            <span id="linkPageNumber" aria-live="polite">Page 1</span>
+            <button id="linkPrevious" type="button" class="secondary" onclick="previousLinkPage()" disabled>Previous</button>
+            <button id="linkNext" type="button" class="secondary" onclick="nextLinkPage()" disabled>Next</button>
+          </div>
         </div>
 
         <aside class="stack">

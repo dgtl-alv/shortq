@@ -108,6 +108,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/links", h.withAuth(h.shortioLinks))
 	mux.HandleFunc("/links/delete_bulk", h.withAuth(h.shortioDeleteBulk))
 	mux.HandleFunc("/links/", h.withAuth(h.shortioLinkByID))
+	mux.HandleFunc("/s/", h.redirectShort)
 	mux.HandleFunc("/r/", h.redirectLegacy)
 	mux.HandleFunc("/", h.web)
 	return securityHeaders(logReq(mux))
@@ -1690,6 +1691,11 @@ func (h *Handler) redirectLegacy(w http.ResponseWriter, r *http.Request) {
 	h.redirectSlug(w, r, slug)
 }
 
+func (h *Handler) redirectShort(w http.ResponseWriter, r *http.Request) {
+	slug := strings.TrimPrefix(r.URL.Path, "/s/")
+	h.redirectSlug(w, r, slug)
+}
+
 func (h *Handler) redirectSlug(w http.ResponseWriter, r *http.Request, slug string) {
 	if slug == "" || strings.Contains(slug, "/") || isReservedRootPath("/"+slug) {
 		http.NotFound(w, r)
@@ -2280,9 +2286,9 @@ func (h *Handler) verifyDomain(d models.TenantDomain) bool {
 
 func (h *Handler) shortURL(l models.Link) string {
 	if domain, err := h.S.ActiveDomainForTenant(l.TenantID); err == nil && domain != "" {
-		return "https://" + domain + "/" + l.Slug
+		return "https://" + domain + "/s/" + l.Slug
 	}
-	return strings.TrimRight(h.C.BaseURL, "/") + "/" + l.Slug
+	return strings.TrimRight(h.C.BaseURL, "/") + "/s/" + l.Slug
 }
 
 func (h *Handler) addShortURLs(links []models.Link) {
@@ -2299,11 +2305,11 @@ func (h *Handler) addShortURLs(links []models.Link) {
 	for index := range links {
 		if links[index].TenantID != nil {
 			if domain := domains[*links[index].TenantID]; domain != "" {
-				links[index].ShortURL = "https://" + domain + "/" + links[index].Slug
+				links[index].ShortURL = "https://" + domain + "/s/" + links[index].Slug
 				continue
 			}
 		}
-		links[index].ShortURL = base + "/" + links[index].Slug
+		links[index].ShortURL = base + "/s/" + links[index].Slug
 	}
 }
 

@@ -2,6 +2,9 @@ const $ = s => document.querySelector(s);
 let currentUser = null;
 let tenantCache = [];
 let linkCache = [];
+let linkCursor = '';
+let linkCursorHistory = [];
+let linkNextCursor = 0;
 let auditCursor = '';
 let auditCursorHistory = [];
 let auditNextCursor = 0;
@@ -90,13 +93,41 @@ async function createLink(e) {
     const link = await api('/api/v1/links', { method: 'POST', body: JSON.stringify(linkPayloadFromForm(e.target, true)) });
     e.target.reset();
     showMsg(`Created: ${link.short_url}`, 'ok');
+    resetLinkPagination();
     await Promise.all([loadLinks(), loadStats()]);
   } catch (x) { showMsg(x); }
 }
 
+function resetLinkPagination() {
+  linkCursor = '';
+  linkCursorHistory = [];
+  linkNextCursor = 0;
+}
+
+function changeLinkPageSize() {
+  resetLinkPagination();
+  loadLinks();
+}
+
+function nextLinkPage() {
+  if (!linkNextCursor) return;
+  linkCursorHistory.push(linkCursor);
+  linkCursor = String(linkNextCursor);
+  loadLinks();
+}
+
+function previousLinkPage() {
+  if (!linkCursorHistory.length) return;
+  linkCursor = linkCursorHistory.pop();
+  loadLinks();
+}
+
 async function loadLinks() {
-  const page = await api('/api/v1/links/page?limit=100') || { items: [] };
+  const query = new URLSearchParams({ limit: $('#linkPageSize').value });
+  if (linkCursor) query.set('cursor', linkCursor);
+  const page = await api('/api/v1/links/page?' + query.toString()) || { items: [] };
   const xs = page.items || [];
+  linkNextCursor = page.next_cursor || 0;
   linkCache = xs;
   $('#links').innerHTML = xs.map(x => `
     <div class="row link-row">
@@ -113,6 +144,9 @@ async function loadLinks() {
       <button class="secondary" onclick="qrForLink(${x.id})">QR</button>
       ${canManageLink(x) ? (currentUser && currentUser.can_delete ? `<button class="danger" onclick="delLink(${x.id})">Delete</button>` : '<button class="danger" disabled title="Deletion access must be activated by a superadmin">Delete locked</button>') : ''}
     </div>`).join('') || '<div class="empty">No links yet. Create first link above.</div>';
+  $('#linkPageNumber').textContent = `Page ${linkCursorHistory.length + 1}`;
+  $('#linkPrevious').disabled = linkCursorHistory.length === 0;
+  $('#linkNext').disabled = !linkNextCursor;
 }
 
 function toggleTargetURL(button) {
@@ -169,6 +203,7 @@ async function importLinks(input) {
     const response = await fetch('/api/v1/links/import', { method: 'POST', body: form, credentials: 'same-origin' });
     const result = await response.json(); if (!response.ok) throw result;
     showMsg(`Imported ${result.imported} links.`, result.errors && Object.keys(result.errors).length ? 'error' : 'ok');
+    resetLinkPagination();
     await Promise.all([loadLinks(), loadStats()]);
   } catch (x) { showMsg(x); } finally { input.value = ''; }
 }
@@ -428,6 +463,7 @@ async function renderDashboard() {
   $('#customerPanel').hidden = true;
   $('#auditPanel').hidden = true;
   $('#runtimePanel').hidden = true;
+  resetLinkPagination();
   await loadTenants();
   setupCustomerForm();
   const tasks = [loadStats(), loadLinks(), loadKeys(), loadCustomers(), loadDomains(), loadClicks(), loadAuditEvents(), loadRuntimeInfo()];
