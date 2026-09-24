@@ -77,5 +77,6 @@ jobs:
           touch .env
           docker compose config --quiet
           python3 scripts/validate-staging-cache.py
+          python3 scripts/validate-production-cache.py
       - name: Check whitespace
         run: git diff --check
