@@ -29,7 +29,11 @@ var isoCountryCodes = func() map[string]bool {
 	return out
 }()
 
-func New(db *sql.DB) *Store { return &Store{DB: wrapDatabase(db)} }
+func New(db *sql.DB) *Store { return NewWithMetrics(db, nil) }
+
+func NewWithMetrics(db *sql.DB, metrics *DatabaseMetrics) *Store {
+	return &Store{DB: wrapDatabase(db, metrics)}
+}
 
 func (s *Store) SetUserActive(id int64, active bool) (models.User, error) {
 	tx, err := s.DB.Begin()

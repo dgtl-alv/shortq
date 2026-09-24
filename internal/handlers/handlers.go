@@ -38,18 +38,19 @@ import (
 )
 
 type Handler struct {
-	C             config.Config
-	S             *store.Store
-	Web           fs.FS
-	attemptMu     sync.Mutex
-	attempts      map[string][]time.Time
-	attemptOps    uint64
-	qrSlots       chan struct{}
-	redirects     *redirectcache.Resolver
-	cacheMetrics  *redirectcache.Metrics
-	clickRecorder *clickqueue.Recorder
-	clickMetrics  *clickqueue.Metrics
-	clickQueue    bool
+	C              config.Config
+	S              *store.Store
+	Web            fs.FS
+	attemptMu      sync.Mutex
+	attempts       map[string][]time.Time
+	attemptOps     uint64
+	qrSlots        chan struct{}
+	redirects      *redirectcache.Resolver
+	cacheMetrics   *redirectcache.Metrics
+	clickRecorder  *clickqueue.Recorder
+	clickMetrics   *clickqueue.Metrics
+	clickQueue     bool
+	requestMetrics *RequestMetrics
 }
 
 func New(c config.Config, s *store.Store, web fs.FS) *Handler {
@@ -65,11 +66,14 @@ func NewWithInfrastructure(c config.Config, s *store.Store, web fs.FS, redirects
 		C: c, S: s, Web: web, attempts: map[string][]time.Time{}, qrSlots: make(chan struct{}, 2),
 		redirects: redirects, cacheMetrics: cacheMetrics,
 		clickRecorder: clickqueue.NewRecorder(publisher, s, clickMetrics), clickMetrics: clickMetrics,
-		clickQueue: publisher != nil,
+		clickQueue: publisher != nil, requestMetrics: &RequestMetrics{},
 	}
 }
 
 func (h *Handler) Routes() http.Handler {
+	if h.requestMetrics == nil {
+		h.requestMetrics = &RequestMetrics{}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", h.health)
 	mux.HandleFunc("/docs", h.withDocsAuth(h.swagger))
@@ -112,7 +116,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/s/", h.redirectShort)
 	mux.HandleFunc("/r/", h.redirectLegacy)
 	mux.HandleFunc("/", h.web)
-	return securityHeaders(logReq(mux))
+	return h.requestMetrics.Wrap(securityHeaders(logReq(mux)))
 }
 
 func (h *Handler) web(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +182,16 @@ func (h *Handler) adminRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.clickMetrics != nil {
 		response["click_queue"] = h.clickMetrics.Snapshot()
+	}
+	if h.requestMetrics != nil {
+		response["requests"] = h.requestMetrics.Snapshot()
+	}
+	if h.S != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 500*time.Millisecond)
+		databaseMetrics, err := h.S.RuntimeMetrics(ctx)
+		cancel()
+		response["database"] = databaseMetrics
+		response["postgresql_metrics_available"] = err == nil
 	}
 	jsonOut(w, http.StatusOK, response)
 }
