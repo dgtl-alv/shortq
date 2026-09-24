@@ -60,7 +60,10 @@ jobs:
       - name: Validate JavaScript
         run: node --check web/app.js
       - name: Validate deployment scripts
-        run: bash -n scripts/*.sh
+        run: |
+          bash -n scripts/*.sh tests/deploy_*_test.sh
+          bash tests/deploy_failure_test.sh
+          bash tests/deploy_up_failure_test.sh
       - name: Validate Compose
         env:
           DATABASE_URL: postgres://shortq:ci-only-password@db:5432/shortq?sslmode=disable
