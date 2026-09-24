@@ -16,6 +16,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 
+	"shortq/internal/config"
 	"shortq/internal/models"
 	"shortq/internal/redirectcache"
 	"shortq/internal/store"
@@ -57,6 +58,27 @@ func TestIsReservedRootPath(t *testing.T) {
 		if got := isReservedRootPath(tt.path); got != tt.want {
 			t.Fatalf("isReservedRootPath(%q) = %v, want %v", tt.path, got, tt.want)
 		}
+	}
+}
+
+func TestShortURLUsesShortLinkPrefix(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT domain FROM tenant_domains WHERE tenant_id=$1 AND status='active' ORDER BY verified_at DESC,id DESC LIMIT 1`)).
+		WithArgs(int64(46)).
+		WillReturnRows(sqlmock.NewRows([]string{"domain"}).AddRow("go.example.com"))
+
+	tenantID := int64(46)
+	h := &Handler{C: config.Config{BaseURL: "https://shortq.example.com"}, S: store.New(db)}
+	got := h.shortURL(models.Link{TenantID: &tenantID, Slug: "promo"})
+	if got != "https://go.example.com/s/promo" {
+		t.Fatalf("short URL = %q", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 

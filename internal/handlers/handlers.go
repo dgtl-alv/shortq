@@ -109,6 +109,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/links", h.withAuth(h.shortioLinks))
 	mux.HandleFunc("/links/delete_bulk", h.withAuth(h.shortioDeleteBulk))
 	mux.HandleFunc("/links/", h.withAuth(h.shortioLinkByID))
+	mux.HandleFunc("/s/", h.redirectShort)
 	mux.HandleFunc("/r/", h.redirectLegacy)
 	mux.HandleFunc("/", h.web)
 	return securityHeaders(logReq(mux))
@@ -495,12 +496,40 @@ func (h *Handler) customers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" {
-		xs, err := h.S.ListUsers(u)
+		limit := 10
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed < 1 || parsed > 100 {
+				errOut(w, http.StatusBadRequest, "limit must be 1 to 100")
+				return
+			}
+			limit = parsed
+		}
+		var cursor int64
+		if raw := r.URL.Query().Get("cursor"); raw != "" {
+			parsed, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil || parsed < 1 {
+				errOut(w, http.StatusBadRequest, "cursor must be a positive user id")
+				return
+			}
+			cursor = parsed
+		}
+		role := r.URL.Query().Get("role")
+		if role != "" && role != "superadmin" && role != "tenant" && role != "customer" {
+			errOut(w, http.StatusBadRequest, "invalid role filter")
+			return
+		}
+		active := r.URL.Query().Get("active")
+		if active != "" && active != "true" && active != "false" {
+			errOut(w, http.StatusBadRequest, "active must be true or false")
+			return
+		}
+		page, err := h.S.ListUsersPage(u, limit, cursor, r.URL.Query().Get("search"), role, active)
 		if err != nil {
 			errOut(w, 500, err.Error())
 			return
 		}
-		jsonOut(w, 200, xs)
+		jsonOut(w, 200, page)
 		return
 	}
 	if r.Method == "POST" {
@@ -1705,6 +1734,11 @@ func (h *Handler) redirectLegacy(w http.ResponseWriter, r *http.Request) {
 	h.redirectSlug(w, r, slug)
 }
 
+func (h *Handler) redirectShort(w http.ResponseWriter, r *http.Request) {
+	slug := strings.TrimPrefix(r.URL.Path, "/s/")
+	h.redirectSlug(w, r, slug)
+}
+
 func (h *Handler) redirectSlug(w http.ResponseWriter, r *http.Request, slug string) {
 	if slug == "" || strings.Contains(slug, "/") || isReservedRootPath("/"+slug) {
 		http.NotFound(w, r)
@@ -2314,9 +2348,9 @@ func (h *Handler) verifyDomain(d models.TenantDomain) bool {
 
 func (h *Handler) shortURL(l models.Link) string {
 	if domain, err := h.S.ActiveDomainForTenant(l.TenantID); err == nil && domain != "" {
-		return "https://" + domain + "/" + l.Slug
+		return "https://" + domain + "/s/" + l.Slug
 	}
-	return strings.TrimRight(h.C.BaseURL, "/") + "/" + l.Slug
+	return strings.TrimRight(h.C.BaseURL, "/") + "/s/" + l.Slug
 }
 
 func (h *Handler) addShortURLs(links []models.Link) {
@@ -2333,11 +2367,11 @@ func (h *Handler) addShortURLs(links []models.Link) {
 	for index := range links {
 		if links[index].TenantID != nil {
 			if domain := domains[*links[index].TenantID]; domain != "" {
-				links[index].ShortURL = "https://" + domain + "/" + links[index].Slug
+				links[index].ShortURL = "https://" + domain + "/s/" + links[index].Slug
 				continue
 			}
 		}
-		links[index].ShortURL = base + "/" + links[index].Slug
+		links[index].ShortURL = base + "/s/" + links[index].Slug
 	}
 }
 

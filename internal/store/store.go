@@ -268,16 +268,46 @@ func (s *Store) ListTenants() ([]models.Tenant, error) {
 }
 
 func (s *Store) ListUsers(scope models.User) ([]models.User, error) {
+	page, err := s.ListUsersPage(scope, 500, 0, "", "", "")
+	return page.Items, err
+}
+
+func (s *Store) ListUsersPage(scope models.User, limit int, cursor int64, search, role, active string) (models.UserPage, error) {
+	if limit < 1 || limit > 500 {
+		limit = 10
+	}
 	q := `SELECT id,tenant_id,email,name,role,deletion_access,active,created_at FROM users`
 	args := []any{}
+	conditions := []string{}
 	if scope.Role == "tenant" {
-		q += ` WHERE tenant_id=? AND role='customer'`
+		conditions = append(conditions, `tenant_id=?`, `role='customer'`)
 		args = append(args, *scope.TenantID)
 	}
-	q += ` ORDER BY id DESC`
+	if search = strings.TrimSpace(strings.ToLower(search)); search != "" {
+		conditions = append(conditions, `(LOWER(name) LIKE ? OR LOWER(email) LIKE ?)`)
+		pattern := "%" + search + "%"
+		args = append(args, pattern, pattern)
+	}
+	if role != "" && scope.Role == "superadmin" {
+		conditions = append(conditions, `role=?`)
+		args = append(args, role)
+	}
+	if active != "" {
+		conditions = append(conditions, `active=?`)
+		args = append(args, active == "true")
+	}
+	if cursor > 0 {
+		conditions = append(conditions, `id<?`)
+		args = append(args, cursor)
+	}
+	if len(conditions) > 0 {
+		q += ` WHERE ` + strings.Join(conditions, ` AND `)
+	}
+	q += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit+1)
 	rows, err := s.DB.Query(q, args...)
 	if err != nil {
-		return nil, err
+		return models.UserPage{}, err
 	}
 	defer rows.Close()
 	var out []models.User
@@ -285,14 +315,22 @@ func (s *Store) ListUsers(scope models.User) ([]models.User, error) {
 		var u models.User
 		var tid sql.NullInt64
 		if err := rows.Scan(&u.ID, &tid, &u.Email, &u.Name, &u.Role, &u.DeletionAccess, &u.Active, &u.CreatedAt); err != nil {
-			return nil, err
+			return models.UserPage{}, err
 		}
 		if tid.Valid {
 			u.TenantID = &tid.Int64
 		}
 		out = append(out, u)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return models.UserPage{}, err
+	}
+	page := models.UserPage{Items: out}
+	if len(out) > limit {
+		page.Items = out[:limit]
+		page.NextCursor = page.Items[len(page.Items)-1].ID
+	}
+	return page, nil
 }
 
 func (s *Store) CreateAPIKey(uid int64, name, hash, prefix, scope string) (int64, error) {

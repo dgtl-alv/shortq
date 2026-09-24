@@ -77,6 +77,35 @@ func TestListLinksPageDoesNotExposeCreatorToCustomer(t *testing.T) {
 	}
 }
 
+func TestListUsersPageFiltersAndReturnsCursor(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := New(db)
+	columns := []string{"id", "tenant_id", "email", "name", "role", "deletion_access", "active", "created_at"}
+	rows := sqlmock.NewRows(columns).
+		AddRow(9, 46, "alice@example.com", "Alice", "customer", false, true, time.Now()).
+		AddRow(8, 46, "alina@example.com", "Alina", "customer", true, true, time.Now()).
+		AddRow(7, 46, "alex@example.com", "Alex", "customer", false, true, time.Now())
+	query := `SELECT id,tenant_id,email,name,role,deletion_access,active,created_at FROM users WHERE (LOWER(name) LIKE ? OR LOWER(email) LIKE ?) AND role=? AND active=? AND id<? ORDER BY id DESC LIMIT ?`
+	mock.ExpectQuery(regexp.QuoteMeta(rebind(query))).
+		WithArgs("%ali%", "%ali%", "customer", true, int64(10), 3).
+		WillReturnRows(rows)
+
+	page, err := store.ListUsersPage(models.User{Role: "superadmin"}, 2, 10, " Ali ", "customer", "true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 2 || page.NextCursor != 8 {
+		t.Fatalf("unexpected user page: %#v", page)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidateLinkAllowsEditableTargetWithImmutableSlug(t *testing.T) {
 	link := models.Link{Slug: "fixed-slug", TargetURL: "https://example.org/new-target", RedirectCode: 302, ForwardQuery: true}
 	if err := ValidateLink(link); err != nil {

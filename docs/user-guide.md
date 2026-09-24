@@ -145,7 +145,7 @@ Catatan: register publik membuat customer tanpa tenant. Kalau customer harus mas
 Format short URL:
 
 ```text
-http://localhost:8080/r/<slug>
+http://localhost:8080/s/<slug>
 ```
 
 ### Generate QR Code

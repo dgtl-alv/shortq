@@ -148,8 +148,14 @@ paths:
       responses: {'409': {description: The ALVA department is fixed}}
   /api/v1/customers:
     get:
-      description: Superadmin lists tenant/customer users. Tenant lists customers in own tenant.
-      responses: {'200': {description: List users}}
+      description: Cursor-paginated users. Superadmin sees all users; tenant sees customers in own tenant.
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 10}}
+        - {name: cursor, in: query, schema: {type: integer}}
+        - {name: search, in: query, description: Case-insensitive name or email search, schema: {type: string}}
+        - {name: role, in: query, schema: {type: string, enum: [superadmin, tenant, customer]}}
+        - {name: active, in: query, schema: {type: boolean}}
+      responses: {'200': {description: User page, content: {application/json: {schema: {$ref: '#/components/schemas/UserPage'}}}}}
     post:
       description: Superadmin creates tenant/customer users. Tenant creates customers in own tenant.
       requestBody:
@@ -354,26 +360,39 @@ paths:
     delete:
       parameters: [{name: id, in: path, required: true, schema: {type: integer}}]
       responses: {'204': {description: Revoked}}
-  /r/{slug}:
+  /s/{slug}:
     get:
       security: []
+      description: Canonical public short-link route.
       parameters: [{name: slug, in: path, required: true, schema: {type: string}}]
-      responses: {'200': {description: Password form when protected}, '301': {description: Permanent redirect}, '302': {description: Temporary redirect}, '307': {description: Method-preserving temporary redirect}, '308': {description: Method-preserving permanent redirect}, '410': {description: Link expired}}
+      responses: {'200': {description: Password form when protected}, '301': {description: Permanent redirect}, '302': {description: Temporary redirect}, '307': {description: Method-preserving temporary redirect}, '308': {description: Method-preserving permanent redirect}, '410': {description: Link expired}, '404': {description: Slug not found}}
     post:
       security: []
       description: Submits a protected-link password. Successful access sets a signed, secure, 12-hour cookie.
       parameters: [{name: slug, in: path, required: true, schema: {type: string}}]
       requestBody: {content: {application/x-www-form-urlencoded: {schema: {type: object, required: [password], properties: {password: {type: string}}}}}}
       responses: {'303': {description: Password accepted}, '200': {description: Password form with validation error}, '429': {description: Too many failed attempts}}
+  /r/{slug}:
+    get:
+      security: []
+      description: Legacy public short-link route. New links use `/s/{slug}`.
+      parameters: [{name: slug, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Password form when protected}, '301': {description: Permanent redirect}, '302': {description: Temporary redirect}, '307': {description: Method-preserving temporary redirect}, '308': {description: Method-preserving permanent redirect}, '410': {description: Link expired}}
+    post:
+      security: []
+      description: Submits a protected-link password through legacy route.
+      parameters: [{name: slug, in: path, required: true, schema: {type: string}}]
+      requestBody: {content: {application/x-www-form-urlencoded: {schema: {type: object, required: [password], properties: {password: {type: string}}}}}}
+      responses: {'303': {description: Password accepted}, '200': {description: Password form with validation error}, '429': {description: Too many failed attempts}}
   /{slug}:
     get:
       security: []
-      description: Canonical public short-link route. Routing and response behavior match `/r/{slug}`.
+      description: Legacy root-level short-link route. New links use `/s/{slug}`.
       parameters: [{name: slug, in: path, required: true, schema: {type: string}}]
       responses: {'200': {description: Password form when protected}, '301': {description: Permanent redirect}, '302': {description: Temporary redirect}, '307': {description: Method-preserving temporary redirect}, '308': {description: Method-preserving permanent redirect}, '410': {description: Link expired}, '404': {description: Slug not found}}
     post:
       security: []
-      description: Submits a protected-link password.
+      description: Submits a protected-link password through legacy route.
       parameters: [{name: slug, in: path, required: true, schema: {type: string}}]
       requestBody: {content: {application/x-www-form-urlencoded: {schema: {type: object, required: [password], properties: {password: {type: string}}}}}}
       responses: {'303': {description: Password accepted}, '200': {description: Password form with validation error}, '429': {description: Too many failed attempts}}
@@ -395,6 +414,12 @@ components:
     User:
       type: object
       properties: {id: {type: integer}, tenant_id: {type: integer, nullable: true}, email: {type: string}, name: {type: string}, role: {type: string, enum: [superadmin, tenant, customer]}, deletion_access: {type: boolean}}
+    UserPage:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/User'}}
+        next_cursor: {type: integer}
     SessionUser:
       allOf:
         - {$ref: '#/components/schemas/User'}

@@ -45,23 +45,39 @@ function openUserReport(id) {
 }
 
 function backToDashboard() {
-  location.hash = "app";
+  location.hash = lastWorkspaceHash || "#home";
 }
 
 async function routeView() {
   if (!currentUser) return;
-  const match = location.hash.match(/^#?report\/(link|user)\/([a-z0-9]+)$/i);
-  if (!match) {
-    currentReportState = null;
-    document.querySelector("#dashboardHome").hidden = false;
-    document.querySelector("#reportView").hidden = true;
+  const reportMatch = location.hash.match(/^#?report\/(link|user)\/([a-z0-9]+)$/i);
+  if (reportMatch) {
+    currentReportState = { kind: reportMatch[1].toLowerCase(), id: reportMatch[2] };
+    document.querySelectorAll(".workspace-view").forEach(element => { element.hidden = true; });
+    document.querySelector("#workspaceNav").hidden = true;
+    document.querySelector("#reportView").hidden = false;
+    if (!document.querySelector("#reportFrom").value) setReportPreset("30", false);
+    await loadCurrentReport();
     return;
   }
-  currentReportState = { kind: match[1].toLowerCase(), id: match[2] };
-  document.querySelector("#dashboardHome").hidden = true;
-  document.querySelector("#reportView").hidden = false;
-  if (!document.querySelector("#reportFrom").value) setReportPreset("30", false);
-  await loadCurrentReport();
+
+  currentReportState = null;
+  document.querySelector("#workspaceNav").hidden = false;
+  document.querySelector("#reportView").hidden = true;
+  const route = (location.hash || "#home").replace(/^#/, "");
+  let view = ["home", "links", "analytics", "admin", "settings"].includes(route.split("/")[0]) ? route.split("/")[0] : "home";
+  let adminView = route.split("/")[1] || "users";
+  const adminAllowed = currentUser.dashboard_mode === "admin" && currentUser.role !== "customer";
+  if (view === "admin" && !adminAllowed) view = "home";
+  if (!["users", "domains", "audit", "runtime"].includes(adminView)) adminView = "users";
+  if ((adminView === "audit" || adminView === "runtime") && currentUser.role !== "superadmin") adminView = "users";
+
+  lastWorkspaceHash = view === "admin" ? `#admin/${adminView}` : `#${view}`;
+  document.querySelectorAll(".workspace-view").forEach(element => { element.hidden = element.dataset.workspaceView !== view; });
+  document.querySelectorAll("#workspaceNav [data-view]").forEach(link => { link.classList.toggle("active", link.dataset.view === view); });
+  document.querySelectorAll(".admin-pane").forEach(element => { element.hidden = element.id !== `admin${adminView[0].toUpperCase() + adminView.slice(1)}Pane`; });
+  document.querySelectorAll(".subnav [data-admin-view]").forEach(link => { link.classList.toggle("active", link.dataset.adminView === adminView); });
+  await loadWorkspaceView(view, adminView);
 }
 
 function reportBasePath() {
